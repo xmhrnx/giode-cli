@@ -17,11 +17,11 @@ import (
 
 	_ "image/jpeg"
 
-	"github.com/mehran9675/giode-cli/internal/config"
-	"github.com/mehran9675/giode-cli/internal/gogio"
-	"github.com/mehran9675/giode-cli/internal/installer"
-	"github.com/mehran9675/giode-cli/internal/pwa"
-	"github.com/mehran9675/giode-cli/internal/sign"
+	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/gogio"
+	"github.com/xmhrnx/giode-cli/internal/installer"
+	"github.com/xmhrnx/giode-cli/internal/pwa"
+	"github.com/xmhrnx/giode-cli/internal/sign"
 )
 
 const buildUsage = `
@@ -641,13 +641,13 @@ func desktopLdflags(c *config.Config, target string) string {
 // on a giode without them link as before: -X ignores missing
 // variables.
 func versionLdflags(c *config.Config) string {
-	flags := fmt.Sprintf("-X github.com/mehran9675/giode.AppVersion=%s -X github.com/mehran9675/giode.AppBuild=%d", c.App.Version, c.App.Build)
+	flags := fmt.Sprintf("-X github.com/xmhrnx/giode.AppVersion=%s -X github.com/xmhrnx/giode.AppBuild=%d", c.App.Version, c.App.Build)
 	if c.App.ID != "" && !strings.ContainsAny(c.App.ID, " \t'\"") {
-		flags += " -X github.com/mehran9675/giode.AppID=" + c.App.ID
+		flags += " -X github.com/xmhrnx/giode.AppID=" + c.App.ID
 	}
 	if c.App.Name != "" {
 		// Base64, as names have spaces that would split -ldflags.
-		flags += " -X github.com/mehran9675/giode.buildAppName=" + base64.URLEncoding.EncodeToString([]byte(c.App.Name))
+		flags += " -X github.com/xmhrnx/giode.buildAppName=" + base64.URLEncoding.EncodeToString([]byte(c.App.Name))
 	}
 	return flags
 }

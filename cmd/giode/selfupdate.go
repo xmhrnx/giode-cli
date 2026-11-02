@@ -18,14 +18,14 @@ import (
 )
 
 // releaseRepo is where releases are published.
-const releaseRepo = "Mehran9675/giode-cli"
+const releaseRepo = "xmhrnx/giode-cli"
 
 const selfUpdateUsage = `
 Usage: giode self-update [version]
 
 Replaces this giode with the latest release (or the given one, like
 v0.2.0) for this computer, downloaded from GitHub. Installed with go
-install instead? Run go install github.com/mehran9675/giode-cli/cmd/giode@latest.
+install instead? Run go install github.com/xmhrnx/giode-cli/cmd/giode@latest.
 `
 
 func cmdSelfUpdate(args []string) error {
@@ -114,7 +114,7 @@ func latestRelease(client *http.Client) (string, error) {
 			return r.TagName, nil
 		}
 	}
-	return "", errors.New("no giode release is published yet; install with go install github.com/mehran9675/giode-cli/cmd/giode@latest")
+	return "", errors.New("no giode release is published yet; install with go install github.com/xmhrnx/giode-cli/cmd/giode@latest")
 }
 
 // extractBinary returns the giode executable from a release archive.

@@ -145,14 +145,14 @@ func cmdUpgrade(args []string) error {
 	if len(pos) > 0 {
 		version = pos[0]
 	}
-	before, _ := output("go", "-C", *dir, "list", "-m", "-f", "{{.Version}}", "github.com/mehran9675/giode")
-	if err := run(command(nil, "go", "-C", *dir, "get", "github.com/mehran9675/giode@"+version)); err != nil {
+	before, _ := output("go", "-C", *dir, "list", "-m", "-f", "{{.Version}}", "github.com/xmhrnx/giode")
+	if err := run(command(nil, "go", "-C", *dir, "get", "github.com/xmhrnx/giode@"+version)); err != nil {
 		return err
 	}
 	if err := run(command(nil, "go", "-C", *dir, "mod", "tidy")); err != nil {
 		return err
 	}
-	after, _ := output("go", "-C", *dir, "list", "-m", "-f", "{{.Version}}", "github.com/mehran9675/giode")
+	after, _ := output("go", "-C", *dir, "list", "-m", "-f", "{{.Version}}", "github.com/xmhrnx/giode")
 	if before == after {
 		fmt.Printf("giode is up to date (%s).\n", after)
 	} else {

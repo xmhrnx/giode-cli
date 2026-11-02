@@ -1,6 +1,6 @@
 # giode CLI
 
-The command-line tool for [giode](https://github.com/mehran9675/giode) apps: create a
+The command-line tool for [giode](https://github.com/xmhrnx/giode) apps: create a
 project, run it on your computer, a phone, a simulator or the browser, and build signed
 packages and installers for Android, iOS, macOS, Windows, Linux and the web.
 
@@ -25,13 +25,13 @@ long flag lists, and the run, doctor and device commands.
 **macOS and Linux:**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Mehran9675/giode-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/xmhrnx/giode-cli/main/install.sh | sh
 ```
 
 **Windows** (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/Mehran9675/giode-cli/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/xmhrnx/giode-cli/main/install.ps1 | iex
 ```
 
 Both download the latest release for your system and put `giode` on your PATH
@@ -39,7 +39,7 @@ Both download the latest release for your system and put `giode` on your PATH
 `GIODE_VERSION=v0.2.0` for a specific release. Or, with Go installed:
 
 ```sh
-go install github.com/mehran9675/giode-cli/cmd/giode@latest
+go install github.com/xmhrnx/giode-cli/cmd/giode@latest
 ```
 
 which puts `giode` in `$(go env GOPATH)/bin`. `giode self-update` updates a release

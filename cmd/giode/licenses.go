@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mehran9675/giode-cli/internal/config"
-	"github.com/mehran9675/giode-cli/internal/licenses"
+	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/licenses"
 )
 
 const licensesUsage = `

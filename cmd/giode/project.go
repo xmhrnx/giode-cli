@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/mehran9675/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/config"
 )
 
 // verbose prints the commands giode runs.

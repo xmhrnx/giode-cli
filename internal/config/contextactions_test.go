@@ -44,7 +44,7 @@ func TestContextActions(t *testing.T) {
 	}
 
 	flag := c.ContextActionsLdflag()
-	const prefix = "-X github.com/mehran9675/giode.buildContextActions="
+	const prefix = "-X github.com/xmhrnx/giode.buildContextActions="
 	if !strings.HasPrefix(flag, prefix) || strings.ContainsAny(flag[len(prefix):], " '\"") {
 		t.Fatalf("ldflag %q", flag)
 	}

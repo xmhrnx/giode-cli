@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs the giode CLI on Linux and macOS:
 #
-#   curl -fsSL https://raw.githubusercontent.com/Mehran9675/giode-cli/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/xmhrnx/giode-cli/main/install.sh | sh
 #
 # It downloads the latest release (or $GIODE_VERSION, like v0.2.0) into
 # $GIODE_INSTALL_DIR, /usr/local/bin when writable and ~/.local/bin
@@ -9,7 +9,7 @@
 # mirror, or a local copy of the release files).
 set -eu
 
-repo="Mehran9675/giode-cli"
+repo="xmhrnx/giode-cli"
 
 case "$(uname -s)" in
   Linux) os=linux ;;
@@ -31,7 +31,7 @@ if [ -z "$version" ] && [ -z "${GIODE_DOWNLOAD_URL:-}" ]; then
       /"tag_name":/ { gsub(/.*"tag_name": *"|".*/, ""); tag = $0 }
       /"name":/ && index($0, want) && tag != "" { print tag; exit }')
   if [ -z "$version" ]; then
-    echo "giode: no release for ${os}/${arch} is published yet; install with: go install github.com/mehran9675/giode-cli/cmd/giode@latest" >&2
+    echo "giode: no release for ${os}/${arch} is published yet; install with: go install github.com/xmhrnx/giode-cli/cmd/giode@latest" >&2
     exit 1
   fi
 fi

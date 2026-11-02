@@ -5,12 +5,13 @@ import (
 
 	"errors"
 	"fmt"
-	"github.com/mehran9675/giode-cli/internal/prompt"
 	"os"
 	"path/filepath"
 
-	"github.com/mehran9675/giode-cli/internal/config"
-	"github.com/mehran9675/giode-cli/internal/scaffold"
+	"github.com/xmhrnx/giode-cli/internal/prompt"
+
+	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/scaffold"
 )
 
 const newUsage = `
@@ -103,8 +104,8 @@ func cmdNew(args []string) error {
 		return err
 	}
 	if !*offline {
-		fmt.Println("Fetching github.com/mehran9675/giode@" + *version + "…")
-		if err := run(command(nil, "go", "-C", dir, "get", "github.com/mehran9675/giode@"+*version)); err != nil {
+		fmt.Println("Fetching github.com/xmhrnx/giode@" + *version + "…")
+		if err := run(command(nil, "go", "-C", dir, "get", "github.com/xmhrnx/giode@"+*version)); err != nil {
 			return err
 		}
 		if err := run(command(nil, "go", "-C", dir, "mod", "tidy")); err != nil {
@@ -193,7 +194,7 @@ func cmdInit(args []string) error {
 		}
 	}
 	s := fmt.Sprintf(`# giode.toml configures how the giode CLI builds this app.
-# Reference: https://github.com/mehran9675/giode-cli#giodetoml
+# Reference: https://github.com/xmhrnx/giode-cli#giodetoml
 
 [app]
 name = %q

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mehran9675/giode-cli/internal/prompt"
-	"github.com/mehran9675/giode-cli/internal/scaffold"
+	"github.com/xmhrnx/giode-cli/internal/prompt"
+	"github.com/xmhrnx/giode-cli/internal/scaffold"
 )
 
 func TestWizard(t *testing.T) {

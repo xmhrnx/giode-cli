@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mehran9675/giode-cli/internal/sign"
+	"github.com/xmhrnx/giode-cli/internal/sign"
 )
 
 func testApp(t *testing.T) App {

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/mehran9675/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/config"
 )
 
 const bumpUsage = `
@@ -393,7 +393,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc pkg-config libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libgles2-mesa-dev libegl1-mesa-dev libffi-dev libxcursor-dev libvulkan-dev nsis osslsigncode
-          go install github.com/mehran9675/giode-cli/cmd/giode@latest
+          go install github.com/xmhrnx/giode-cli/cmd/giode@latest
 [[- if .SetupLinux]]
       - name: Project setup (giode.toml ci.setup)
         run: |
@@ -459,7 +459,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - run: go install github.com/mehran9675/giode-cli/cmd/giode@latest
+      - run: go install github.com/xmhrnx/giode-cli/cmd/giode@latest
 [[- if .SetupMac]]
       - name: Project setup (giode.toml ci.setup)
         run: |
@@ -504,7 +504,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - run: go install github.com/mehran9675/giode-cli/cmd/giode@latest
+      - run: go install github.com/xmhrnx/giode-cli/cmd/giode@latest
 [[- if .SetupMac]]
       - name: Project setup (giode.toml ci.setup)
         run: |
@@ -574,7 +574,7 @@ jobs:
         run: |
           if ("${{ matrix.choco_nsis }}" -eq "true") { choco install nsis -y; "C:\Program Files (x86)\NSIS" | Out-File -Append $env:GITHUB_PATH }
           else { C:\msys64\usr\bin\pacman.exe -S --noconfirm mingw-w64-x86_64-nsis }
-      - run: go install github.com/mehran9675/giode-cli/cmd/giode@latest
+      - run: go install github.com/xmhrnx/giode-cli/cmd/giode@latest
 [[- if .SetupWin]]
       - name: Project setup (giode.toml ci.setup; $MINGW_PACKAGE_PREFIX names this runner's packages)
         run: |

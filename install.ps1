@@ -1,12 +1,12 @@
 # Installs the giode CLI on Windows:
 #
-#   irm https://raw.githubusercontent.com/Mehran9675/giode-cli/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/xmhrnx/giode-cli/main/install.ps1 | iex
 #
 # It downloads the latest release (or $env:GIODE_VERSION, like v0.2.0)
 # into %LOCALAPPDATA%\Programs\giode (or $env:GIODE_INSTALL_DIR) and adds
 # that folder to your PATH.
 $ErrorActionPreference = 'Stop'
-$repo = 'Mehran9675/giode-cli'
+$repo = 'xmhrnx/giode-cli'
 $arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'amd64' }
 $name = "giode_windows_$arch"
 $version = $env:GIODE_VERSION
@@ -16,7 +16,7 @@ if (-not $version) {
   $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=20" -UseBasicParsing
   $release = $releases | Where-Object { -not $_.draft -and ($_.assets | Where-Object { $_.name -eq "$name.zip" }) } | Select-Object -First 1
   if (-not $release) {
-    throw "No giode release for Windows $arch is published yet; install with: go install github.com/mehran9675/giode-cli/cmd/giode@latest"
+    throw "No giode release for Windows $arch is published yet; install with: go install github.com/xmhrnx/giode-cli/cmd/giode@latest"
   }
   $version = $release.tag_name
 }

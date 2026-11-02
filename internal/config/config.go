@@ -336,7 +336,7 @@ func (c *Config) UpdateLdflags() string {
 	if c.Update.FeedURL == "" || c.Update.PublicKey == "" {
 		return ""
 	}
-	const pkg = "github.com/mehran9675/giode/update."
+	const pkg = "github.com/xmhrnx/giode/update."
 	return "-X " + pkg + "defaultFeedURL=" + c.Update.FeedURL + " -X " + pkg + "defaultPublicKey=" + c.Update.PublicKey +
 		" -X " + pkg + "defaultVersion=" + c.App.Version
 }

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mehran9675/giode-cli/internal/sign"
+	"github.com/xmhrnx/giode-cli/internal/sign"
 )
 
 const signUsage = `

@@ -11,9 +11,9 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/mehran9675/giode-cli/internal/config"
-	"github.com/mehran9675/giode-cli/internal/prompt"
-	"github.com/mehran9675/giode-cli/internal/scaffold"
+	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/prompt"
+	"github.com/xmhrnx/giode-cli/internal/scaffold"
 )
 
 // terminal returns a prompt.Terminal on the standard streams, with raw
