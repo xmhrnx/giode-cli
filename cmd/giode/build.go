@@ -631,7 +631,32 @@ func desktopLdflags(c *config.Config, target string) string {
 	case "windows", "macos", "linux":
 		flags += " " + c.ContextActionsLdflag() + " " + c.UpdateLdflags()
 	}
-	return strings.Join(strings.Fields(flags), " ")
+	return strings.Join(withLegacyGiodePath(strings.Fields(flags)), " ")
+}
+
+// giodeModule is the giode library's module path; legacyGiodeModule
+// the one it had before the GitHub account was renamed, which apps not
+// yet moved with giode upgrade still import.
+const (
+	giodeModule       = "github.com/xmhrnx/giode"
+	legacyGiodeModule = "github.com/mehran9675/giode"
+)
+
+// withLegacyGiodePath repeats each -X setting of a giode variable under
+// the legacy module path, so apps that still import it get them too:
+// the linker ignores -X for a package the program doesn't contain.
+func withLegacyGiodePath(fields []string) []string {
+	out := fields
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] != "-X" {
+			continue
+		}
+		v := fields[i+1]
+		if rest, ok := strings.CutPrefix(v, giodeModule); ok && (strings.HasPrefix(rest, ".") || strings.HasPrefix(rest, "/")) {
+			out = append(out, "-X", legacyGiodeModule+rest)
+		}
+	}
+	return out
 }
 
 // versionLdflags sets giode.AppVersion and giode.AppBuild, so the app

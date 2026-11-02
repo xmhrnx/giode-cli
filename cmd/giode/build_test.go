@@ -161,3 +161,34 @@ func TestWorkflowBuildAndDispatch(t *testing.T) {
 		}
 	}
 }
+
+func TestLdflagsLegacyGiodePath(t *testing.T) {
+	c := &config.Config{App: config.App{ID: "com.example.player", Version: "1.0.0", Build: 3}}
+	got := desktopLdflags(c, "linux")
+	for _, w := range []string{"-X github.com/xmhrnx/giode.AppVersion=1.0.0", "-X github.com/mehran9675/giode.AppVersion=1.0.0", "-X github.com/mehran9675/giode.AppID=com.example.player"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("ldflags %q lack %q", got, w)
+		}
+	}
+	// Other packages' settings aren't repeated.
+	if got := strings.Join(withLegacyGiodePath([]string{"-X", "main.version=1", "-X", "github.com/xmhrnx/giode-cli.x=1"}), " "); strings.Contains(got, "mehran9675") {
+		t.Errorf("repeated a non-giode setting: %s", got)
+	}
+}
+
+func TestMoveGiodeImports(t *testing.T) {
+	dir := t.TempDir()
+	src := "package main\n\nimport (\n\t\"github.com/mehran9675/giode\"\n\t\"github.com/mehran9675/giode/styles\"\n\t\"github.com/mehran9675/giodex\"\n)\n"
+	os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o644)
+	os.MkdirAll(filepath.Join(dir, "vendor"), 0o755)
+	os.WriteFile(filepath.Join(dir, "vendor", "v.go"), []byte(src), 0o644)
+	n, err := moveGiodeImports(dir)
+	if err != nil || n != 1 {
+		t.Fatalf("moved %d files, err %v; want 1", n, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "main.go"))
+	want := "package main\n\nimport (\n\t\"github.com/xmhrnx/giode\"\n\t\"github.com/xmhrnx/giode/styles\"\n\t\"github.com/mehran9675/giodex\"\n)\n"
+	if string(b) != want {
+		t.Errorf("got:\n%s", b)
+	}
+}
