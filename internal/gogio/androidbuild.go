@@ -998,26 +998,59 @@ func latestPlatform(sdk string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var bestVer int
+	var bestVer []int
 	var bestPlat string
 	for _, platform := range allPlats {
-		_, name := filepath.Split(platform)
-		// The glob above guarantees the "android-" prefix.
-		verStr := name[len("android-"):]
-		ver, err := strconv.Atoi(verStr)
-		if err != nil {
+		ver, ok := platformVersion(filepath.Base(platform))
+		if !ok || (bestPlat != "" && !versionLess(bestVer, ver)) {
 			continue
 		}
-		if ver < bestVer {
+		if _, err := os.Stat(filepath.Join(platform, "android.jar")); err != nil {
 			continue
 		}
-		bestVer = ver
-		bestPlat = platform
+		bestVer, bestPlat = ver, platform
 	}
 	if bestPlat == "" {
 		return "", fmt.Errorf("no Android platform installed in %q: install one with `sdkmanager \"platforms;android-35\"` (or Android Studio's SDK Manager, SDK Platforms tab); `giode doctor` lists anything else missing", sdk)
 	}
 	return bestPlat, nil
+}
+
+// platformVersion reads a platform directory's API level: android-35,
+// and the newer android-36.1 and android-37.0, with any suffix after
+// the numbers (android-34-ext12) ignored. Previews named by codename
+// don't count.
+func platformVersion(name string) ([]int, bool) {
+	rest, ok := strings.CutPrefix(name, "android-")
+	if !ok {
+		return nil, false
+	}
+	var ver []int
+	for _, part := range strings.Split(rest, ".") {
+		end := 0
+		for end < len(part) && part[end] >= '0' && part[end] <= '9' {
+			end++
+		}
+		if end == 0 {
+			break
+		}
+		n, _ := strconv.Atoi(part[:end])
+		ver = append(ver, n)
+		if end < len(part) {
+			break
+		}
+	}
+	return ver, len(ver) > 0
+}
+
+// versionLess reports whether version a is lower than b.
+func versionLess(a, b []int) bool {
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if a[i] != b[i] {
+			return a[i] < b[i]
+		}
+	}
+	return len(a) < len(b)
 }
 
 func latestCompiler(tcRoot, a string, minsdk int) (string, error) {
