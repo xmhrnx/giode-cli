@@ -67,7 +67,7 @@ func TestWorkflowSetup(t *testing.T) {
 func TestLdflagsVersion(t *testing.T) {
 	c := &config.Config{App: config.App{ID: "com.example.player", Version: "1.4.2", Build: 31, Ldflags: "-X main.version={version} -X main.build={build}"}}
 	got := desktopLdflags(c, "android")
-	for _, w := range []string{"-X main.version=1.4.2", "-X main.build=31", "-X github.com/mehran9675/giode.AppVersion=1.4.2", "-X github.com/mehran9675/giode.AppBuild=31"} {
+	for _, w := range []string{"-X main.version=1.4.2", "-X main.build=31", "-X github.com/mehran9675/giode.AppVersion=1.4.2", "-X github.com/mehran9675/giode.AppBuild=31", "-X github.com/mehran9675/giode.AppID=com.example.player"} {
 		if !strings.Contains(got, w) {
 			t.Errorf("ldflags %q lack %q", got, w)
 		}

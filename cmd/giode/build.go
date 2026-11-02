@@ -635,10 +635,15 @@ func desktopLdflags(c *config.Config, target string) string {
 
 // versionLdflags sets giode.AppVersion and giode.AppBuild, so the app
 // can show the version it was built as (the release tag in CI, through
-// $GIODE_VERSION). Apps on a giode without them link as before: -X
-// ignores missing variables.
+// $GIODE_VERSION), and giode.AppID, which names its login entry. Apps
+// on a giode without them link as before: -X ignores missing
+// variables.
 func versionLdflags(c *config.Config) string {
-	return fmt.Sprintf("-X github.com/mehran9675/giode.AppVersion=%s -X github.com/mehran9675/giode.AppBuild=%d", c.App.Version, c.App.Build)
+	flags := fmt.Sprintf("-X github.com/mehran9675/giode.AppVersion=%s -X github.com/mehran9675/giode.AppBuild=%d", c.App.Version, c.App.Build)
+	if c.App.ID != "" && !strings.ContainsAny(c.App.ID, " \t'\"") {
+		flags += " -X github.com/mehran9675/giode.AppID=" + c.App.ID
+	}
+	return flags
 }
 
 // licensesWritten records projects whose app.licenses this run already

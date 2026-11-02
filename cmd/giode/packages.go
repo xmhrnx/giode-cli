@@ -153,7 +153,7 @@ func buildMSIX(c *config.Config, o buildOpts) (string, error) {
 	if err := msix.Write(msix.App{
 		Name: c.App.Name, IdentityName: name, Publisher: m.Publisher, PublisherDisplayName: display,
 		Description: c.App.Description, Version: c.App.Version, Exe: exe, Icon: c.Path(c.App.Icon),
-		Arch: arch, Protocols: protocols, Files: dlls, FileTypes: msixTypes,
+		Arch: arch, Protocols: protocols, Files: dlls, FileTypes: msixTypes, StartupTask: m.StartupTask,
 	}, out); err != nil {
 		return "", err
 	}
