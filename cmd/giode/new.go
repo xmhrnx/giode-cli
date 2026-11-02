@@ -5,9 +5,10 @@ import (
 
 	"errors"
 	"fmt"
-	"github.com/xmhrnx/giode-cli/internal/prompt"
 	"os"
 	"path/filepath"
+
+	"github.com/xmhrnx/giode-cli/internal/prompt"
 
 	"github.com/xmhrnx/giode-cli/internal/config"
 	"github.com/xmhrnx/giode-cli/internal/scaffold"
