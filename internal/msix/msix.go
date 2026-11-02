@@ -51,7 +51,14 @@ type App struct {
 	Files []string
 	// FileTypes are file types the app opens.
 	FileTypes []FileType
+	// StartupTask declares a startup task, off until the app turns it
+	// on with giode's App.SetLaunchAtLogin: a packaged app can't use
+	// the Run key.
+	StartupTask bool
 }
+
+// StartupTaskID is the startup task's TaskId; giode looks it up by it.
+const StartupTaskID = "GiodeLaunchAtLogin"
 
 // FileType is a file type association: a name (lower case letters,
 // digits, -, _ and .), a description and extensions with the dot.
@@ -223,7 +230,7 @@ func Manifest(a App, arch, exe string) (string, error) {
 	}
 	e := html.EscapeString
 	var ext strings.Builder
-	if len(a.Protocols) > 0 || len(a.FileTypes) > 0 {
+	if len(a.Protocols) > 0 || len(a.FileTypes) > 0 || a.StartupTask {
 		ext.WriteString("\n      <Extensions>")
 		for _, p := range a.Protocols {
 			fmt.Fprintf(&ext, "\n        <uap:Extension Category=\"windows.protocol\"><uap:Protocol Name=\"%s\"/></uap:Extension>", e(strings.ToLower(p)))
@@ -235,13 +242,17 @@ func Manifest(a App, arch, exe string) (string, error) {
 			}
 			ext.WriteString("</uap:SupportedFileTypes></uap:FileTypeAssociation></uap:Extension>")
 		}
+		if a.StartupTask {
+			fmt.Fprintf(&ext, "\n        <desktop:Extension Category=\"windows.startupTask\" Executable=\"%s\" EntryPoint=\"Windows.FullTrustApplication\"><desktop:StartupTask TaskId=\"%s\" Enabled=\"false\" DisplayName=\"%s\"/></desktop:Extension>", e(exe), StartupTaskID, e(a.Name))
+		}
 		ext.WriteString("\n      </Extensions>")
 	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap rescap">
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  IgnorableNamespaces="uap rescap desktop">
   <Identity Name="%s" Publisher="%s" Version="%s" ProcessorArchitecture="%s"/>
   <Properties>
     <DisplayName>%s</DisplayName>

@@ -189,6 +189,7 @@ timestamp = "http://timestamp.digicert.com"   # "none" to skip
 [windows.msix]                       # giode build msix
 publisher = "CN=Example Ltd"         # the signing certificate's subject (or Partner Center's ID)
 identity_name = "ExampleLtd.PocketAgent"   # reserved in Partner Center for the Store
+startup_task = true                  # lets the app start at login (App.SetLaunchAtLogin)
 
 [windows.winget]                     # giode build winget
 id = "Example.PocketAgent"

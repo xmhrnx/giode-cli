@@ -263,6 +263,9 @@ type WindowsMSIX struct {
 	// PublisherDisplayName is the publisher shown; app.publisher by
 	// default.
 	PublisherDisplayName string `toml:"publisher_display_name"`
+	// StartupTask declares a startup task in the package, so the app can
+	// start at login: giode's App.SetLaunchAtLogin turns it on.
+	StartupTask bool `toml:"startup_task"`
 }
 
 // WindowsWinget configures winget manifests (giode build winget).

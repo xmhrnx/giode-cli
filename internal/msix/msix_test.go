@@ -118,6 +118,30 @@ func TestSign(t *testing.T) {
 	}
 }
 
+func TestManifest_StartupTask(t *testing.T) {
+	a := App{Name: "Agent", IdentityName: "com.example.agent", Publisher: "CN=Example", Version: "1.0.0"}
+	m, err := Manifest(a, "x64", "Agent.exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(m, "windows.startupTask") {
+		t.Error("startup task without StartupTask")
+	}
+	a.StartupTask = true
+	if m, err = Manifest(a, "x64", "Agent.exe"); err != nil {
+		t.Fatal(err)
+	}
+	if err := xml.Unmarshal([]byte(m), new(struct{})); err != nil {
+		t.Fatalf("manifest isn't XML: %v\n%s", err, m)
+	}
+	for _, w := range []string{`IgnorableNamespaces="uap rescap desktop"`, `<desktop:Extension Category="windows.startupTask" Executable="Agent.exe" EntryPoint="Windows.FullTrustApplication">`,
+		`<desktop:StartupTask TaskId="GiodeLaunchAtLogin" Enabled="false" DisplayName="Agent"/>`} {
+		if !strings.Contains(m, w) {
+			t.Errorf("lacks %s:\n%s", w, m)
+		}
+	}
+}
+
 func TestManifest_FileTypes(t *testing.T) {
 	m, err := Manifest(App{Name: "Player", IdentityName: "com.example.player", Publisher: "CN=Example", Version: "1.0.0",
 		FileTypes: []FileType{{Name: "mkv", DisplayName: "MKV video", Extensions: []string{".mkv", ".mk3d"}}}}, "x64", "Player.exe")
