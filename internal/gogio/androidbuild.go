@@ -1015,7 +1015,7 @@ func latestPlatform(sdk string) (string, error) {
 		bestPlat = platform
 	}
 	if bestPlat == "" {
-		return "", fmt.Errorf("no platforms found in %q", sdk)
+		return "", fmt.Errorf("no Android platform installed in %q: install one with `sdkmanager \"platforms;android-35\"` (or Android Studio's SDK Manager, SDK Platforms tab); `giode doctor` lists anything else missing", sdk)
 	}
 	return bestPlat, nil
 }
