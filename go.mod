@@ -1,4 +1,4 @@
-module github.com/mehran9675/giode-cli
+module github.com/xmhrnx/giode-cli
 
 go 1.24.1
 

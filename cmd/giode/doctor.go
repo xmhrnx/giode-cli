@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/mehran9675/giode-cli/internal/config"
-	"github.com/mehran9675/giode-cli/internal/gogio"
+	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/gogio"
 
 	"fmt"
 	"os"

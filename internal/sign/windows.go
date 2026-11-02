@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mehran9675/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/config"
 )
 
 // Verbose prints the signing commands, with the password hidden.

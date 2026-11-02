@@ -17,11 +17,11 @@ import (
 
 	_ "image/jpeg"
 
-	"github.com/mehran9675/giode-cli/internal/config"
-	"github.com/mehran9675/giode-cli/internal/gogio"
-	"github.com/mehran9675/giode-cli/internal/installer"
-	"github.com/mehran9675/giode-cli/internal/pwa"
-	"github.com/mehran9675/giode-cli/internal/sign"
+	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/gogio"
+	"github.com/xmhrnx/giode-cli/internal/installer"
+	"github.com/xmhrnx/giode-cli/internal/pwa"
+	"github.com/xmhrnx/giode-cli/internal/sign"
 )
 
 const buildUsage = `
@@ -631,7 +631,32 @@ func desktopLdflags(c *config.Config, target string) string {
 	case "windows", "macos", "linux":
 		flags += " " + c.ContextActionsLdflag() + " " + c.UpdateLdflags()
 	}
-	return strings.Join(strings.Fields(flags), " ")
+	return strings.Join(withLegacyGiodePath(strings.Fields(flags)), " ")
+}
+
+// giodeModule is the giode library's module path; legacyGiodeModule
+// the one it had before the GitHub account was renamed, which apps not
+// yet moved with giode upgrade still import.
+const (
+	giodeModule       = "github.com/xmhrnx/giode"
+	legacyGiodeModule = "github.com/mehran9675/giode"
+)
+
+// withLegacyGiodePath repeats each -X setting of a giode variable under
+// the legacy module path, so apps that still import it get them too:
+// the linker ignores -X for a package the program doesn't contain.
+func withLegacyGiodePath(fields []string) []string {
+	out := fields
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] != "-X" {
+			continue
+		}
+		v := fields[i+1]
+		if rest, ok := strings.CutPrefix(v, giodeModule); ok && (strings.HasPrefix(rest, ".") || strings.HasPrefix(rest, "/")) {
+			out = append(out, "-X", legacyGiodeModule+rest)
+		}
+	}
+	return out
 }
 
 // versionLdflags sets giode.AppVersion and giode.AppBuild, so the app
@@ -641,13 +666,13 @@ func desktopLdflags(c *config.Config, target string) string {
 // on a giode without them link as before: -X ignores missing
 // variables.
 func versionLdflags(c *config.Config) string {
-	flags := fmt.Sprintf("-X github.com/mehran9675/giode.AppVersion=%s -X github.com/mehran9675/giode.AppBuild=%d", c.App.Version, c.App.Build)
+	flags := fmt.Sprintf("-X github.com/xmhrnx/giode.AppVersion=%s -X github.com/xmhrnx/giode.AppBuild=%d", c.App.Version, c.App.Build)
 	if c.App.ID != "" && !strings.ContainsAny(c.App.ID, " \t'\"") {
-		flags += " -X github.com/mehran9675/giode.AppID=" + c.App.ID
+		flags += " -X github.com/xmhrnx/giode.AppID=" + c.App.ID
 	}
 	if c.App.Name != "" {
 		// Base64, as names have spaces that would split -ldflags.
-		flags += " -X github.com/mehran9675/giode.buildAppName=" + base64.URLEncoding.EncodeToString([]byte(c.App.Name))
+		flags += " -X github.com/xmhrnx/giode.buildAppName=" + base64.URLEncoding.EncodeToString([]byte(c.App.Name))
 	}
 	return flags
 }

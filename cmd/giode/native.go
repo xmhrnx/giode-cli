@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mehran9675/giode-cli/internal/config"
-	"github.com/mehran9675/giode-cli/internal/native"
+	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/native"
 )
 
 // nativeLibs returns the shared libraries bin loads that [native]

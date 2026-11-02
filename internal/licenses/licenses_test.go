@@ -43,7 +43,7 @@ func TestCollect(t *testing.T) {
 	if l := found["github.com/BurntSushi/toml"]; l.Type != "MIT" || l.Text == "" {
 		t.Errorf("toml's license: %+v", l.Type)
 	}
-	if _, ok := found["github.com/mehran9675/giode-cli"]; ok {
+	if _, ok := found["github.com/xmhrnx/giode-cli"]; ok {
 		t.Error("the main module is listed")
 	}
 }

@@ -130,7 +130,8 @@ Usage: giode upgrade [version]
 
 Updates the project's giode dependency to the latest release (or the
 given version) and tidies go.mod, bringing Gio along at the version giode
-needs.
+needs. A project still on the old module path, github.com/mehran9675/giode,
+is moved to github.com/xmhrnx/giode: its imports are rewritten.
 `
 
 func cmdUpgrade(args []string) error {
@@ -145,20 +146,70 @@ func cmdUpgrade(args []string) error {
 	if len(pos) > 0 {
 		version = pos[0]
 	}
-	before, _ := output("go", "-C", *dir, "list", "-m", "-f", "{{.Version}}", "github.com/mehran9675/giode")
-	if err := run(command(nil, "go", "-C", *dir, "get", "github.com/mehran9675/giode@"+version)); err != nil {
+	before, _ := output("go", "-C", *dir, "list", "-m", "-f", "{{.Version}}", giodeModule)
+	if legacy, err := output("go", "-C", *dir, "list", "-m", "-f", "{{.Version}}", legacyGiodeModule); err == nil && strings.TrimSpace(legacy) != "" {
+		before = legacy
+		n, err := moveGiodeImports(*dir)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Moved %d files from %s to %s.\n", n, legacyGiodeModule, giodeModule)
+		if err := run(command(nil, "go", "-C", *dir, "mod", "edit", "-droprequire="+legacyGiodeModule)); err != nil {
+			return err
+		}
+	}
+	if err := run(command(nil, "go", "-C", *dir, "get", "github.com/xmhrnx/giode@"+version)); err != nil {
 		return err
 	}
 	if err := run(command(nil, "go", "-C", *dir, "mod", "tidy")); err != nil {
 		return err
 	}
-	after, _ := output("go", "-C", *dir, "list", "-m", "-f", "{{.Version}}", "github.com/mehran9675/giode")
+	after, _ := output("go", "-C", *dir, "list", "-m", "-f", "{{.Version}}", giodeModule)
 	if before == after {
 		fmt.Printf("giode is up to date (%s).\n", after)
 	} else {
 		fmt.Printf("giode %s → %s\n", before, after)
 	}
 	return nil
+}
+
+// moveGiodeImports rewrites imports of the legacy giode module path to
+// the current one in the project's Go files, skipping hidden
+// directories and vendor, and reports how many files changed.
+func moveGiodeImports(dir string) (int, error) {
+	n := 0
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path != dir && (strings.HasPrefix(d.Name(), ".") || d.Name() == "vendor" || d.Name() == "node_modules") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		moved := strings.NewReplacer(
+			`"`+legacyGiodeModule+`"`, `"`+giodeModule+`"`,
+			`"`+legacyGiodeModule+`/`, `"`+giodeModule+`/`,
+		).Replace(string(b))
+		if moved == string(b) {
+			return nil
+		}
+		n++
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, []byte(moved), info.Mode().Perm())
+	})
+	return n, err
 }
 
 const manifestUsage = `

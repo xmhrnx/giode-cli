@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mehran9675/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/config"
 )
 
 func TestParse_FlagsAfterArgs(t *testing.T) {

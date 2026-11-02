@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/mehran9675/giode-cli/internal/config"
-	"github.com/mehran9675/giode-cli/internal/giopatch"
+	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/giopatch"
 )
 
 // gioBuild is how a build uses Gio: the go.mod of the patched copy

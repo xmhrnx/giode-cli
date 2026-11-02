@@ -51,7 +51,7 @@ func (c *Config) ContextActionsLdflag() string {
 		return ""
 	}
 	b, _ := json.Marshal(c.ContextActions)
-	return "-X github.com/mehran9675/giode.buildContextActions=" + base64.URLEncoding.EncodeToString(b)
+	return "-X github.com/xmhrnx/giode.buildContextActions=" + base64.URLEncoding.EncodeToString(b)
 }
 
 // ContextActionPrefix names the app's context menu entries, as the

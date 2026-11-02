@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mehran9675/giode-cli/internal/maven"
+	"github.com/xmhrnx/giode-cli/internal/maven"
 )
 
 // androidLibs are the AARs and JARs to build in (Options.AndroidLibs);

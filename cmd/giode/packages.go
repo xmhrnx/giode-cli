@@ -8,10 +8,10 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/mehran9675/giode-cli/internal/config"
-	"github.com/mehran9675/giode-cli/internal/linuxpkg"
-	"github.com/mehran9675/giode-cli/internal/msix"
-	"github.com/mehran9675/giode-cli/internal/winget"
+	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/linuxpkg"
+	"github.com/xmhrnx/giode-cli/internal/msix"
+	"github.com/xmhrnx/giode-cli/internal/winget"
 )
 
 // linuxApp describes the built Linux binary bin for packaging.

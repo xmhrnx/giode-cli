@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mehran9675/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/config"
 )
 
 const runUsage = `

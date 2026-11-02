@@ -1,6 +1,6 @@
 # giode CLI
 
-The command-line tool for [giode](https://github.com/mehran9675/giode) apps: create a
+The command-line tool for [giode](https://github.com/xmhrnx/giode) apps: create a
 project, run it on your computer, a phone, a simulator or the browser, and build signed
 packages and installers for Android, iOS, macOS, Windows, Linux and the web.
 
@@ -25,13 +25,13 @@ long flag lists, and the run, doctor and device commands.
 **macOS and Linux:**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Mehran9675/giode-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/xmhrnx/giode-cli/main/install.sh | sh
 ```
 
 **Windows** (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/Mehran9675/giode-cli/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/xmhrnx/giode-cli/main/install.ps1 | iex
 ```
 
 Both download the latest release for your system and put `giode` on your PATH
@@ -39,7 +39,7 @@ Both download the latest release for your system and put `giode` on your PATH
 `GIODE_VERSION=v0.2.0` for a specific release. Or, with Go installed:
 
 ```sh
-go install github.com/mehran9675/giode-cli/cmd/giode@latest
+go install github.com/xmhrnx/giode-cli/cmd/giode@latest
 ```
 
 which puts `giode` in `$(go env GOPATH)/bin`. `giode self-update` updates a release
@@ -66,7 +66,7 @@ target needs.
 | `giode bump [major\|minor\|patch\|build]` | Raises `app.version` and always `app.build`. In CI, `$GIODE_VERSION` (a tag like `v1.4.2`) and `$GIODE_BUILD` override both. |
 | `giode ci` | Writes `.github/workflows/release.yml`: on a version tag (or a published release, with `ci.trigger = "release"`), runs the tests, builds packages for the platforms in `app.platforms` (iOS included), signed with the repository's secrets when present, and attaches them to the GitHub release. |
 | `giode licenses` | Writes the licenses of the app's Go modules (on any platform) and Go's to `assets/licenses.json` (or `app.licenses`, refreshed on every build) for `giode.LicensesView`. |
-| `giode upgrade [version]` | Updates the project's giode dependency and tidies `go.mod`. |
+| `giode upgrade [version]` | Updates the project's giode dependency and tidies `go.mod`. A project still importing `github.com/mehran9675/giode` is moved to `github.com/xmhrnx/giode`. |
 | `giode manifest [android\|ios\|macos]` | Prints what `giode.toml` adds to the manifest and Info.plist. |
 | `giode clean` | Removes `dist`. |
 | `giode self-update` | Updates the CLI to the latest release. |
