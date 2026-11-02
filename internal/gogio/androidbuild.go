@@ -750,19 +750,9 @@ func signAPK(tmpDir string, apkFile string, tools *androidTools, bi *buildInfo) 
 }
 
 func signAAB(tmpDir string, aabFile string, tools *androidTools, bi *buildInfo) error {
-	allBundleTools, err := filepath.Glob(filepath.Join(tools.buildtools, "bundletool*.jar"))
+	bundletool, err := findBundletool(tools.buildtools)
 	if err != nil {
 		return err
-	}
-
-	bundletool := ""
-	for _, v := range allBundleTools {
-		bundletool = v
-		break
-	}
-
-	if bundletool == "" {
-		return fmt.Errorf("bundletool was not found at %s. Download it from https://github.com/google/bundletool/releases and move to the respective folder", tools.buildtools)
 	}
 
 	_, err = runCmd(exec.Command(

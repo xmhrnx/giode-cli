@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/mehran9675/giode-cli/internal/config"
+	"github.com/mehran9675/giode-cli/internal/gogio"
 
 	"fmt"
 	"os"
@@ -147,8 +148,28 @@ func checkAndroid() []check {
 		{area: area, name: "platform", ok: plat != "", detail: filepath.Base(plat), fix: sdkmanager + ` "platforms;android-35"`},
 		{area: area, name: "NDK", ok: ndk != "", detail: filepath.Base(ndk), fix: sdkmanager + ` "ndk;27.2.12479018"`},
 		{area: area, name: "platform tools (adb)", ok: ptErr == nil, fix: sdkmanager + ` "platform-tools"`},
+		checkBundletool(area, bt),
 		checkJDK(area),
 	}
+}
+
+// checkBundletool reports where app bundles (giode build aab) get
+// bundletool: the build tools folder, giode's cache, or a download on
+// the first bundle build, which needs the network.
+func checkBundletool(area, buildtools string) check {
+	c := check{area: area, name: "bundletool (giode build aab)", ok: true}
+	if found, _ := filepath.Glob(filepath.Join(buildtools, "bundletool*.jar")); len(found) > 0 {
+		c.detail = filepath.Base(found[0])
+		return c
+	}
+	if p, err := gogio.BundletoolCachePath(); err == nil {
+		if _, err := os.Stat(p); err == nil {
+			c.detail = p
+			return c
+		}
+	}
+	c.detail = "downloaded from github.com/google/bundletool on the first app bundle build"
+	return c
 }
 
 func checkJDK(area string) check {

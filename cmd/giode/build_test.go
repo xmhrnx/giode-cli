@@ -135,3 +135,29 @@ func TestWorkflowPlatformsTriggerTest(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkflowBuildAndDispatch(t *testing.T) {
+	tag := workflow(&config.Config{})
+	if !strings.Contains(tag, "workflow_dispatch:") || !strings.Contains(tag, "GIODE_BUILD: ${{ github.run_number }}") {
+		t.Error("the default workflow lacks workflow_dispatch or the run-number build")
+	}
+	off := false
+	rel := workflow(&config.Config{CI: config.CI{Trigger: "release", Build: "tag"}})
+	if strings.Contains(rel, "workflow_dispatch") || strings.Contains(rel, "GIODE_BUILD") {
+		t.Errorf("release trigger with build = tag:\n%s", rel)
+	}
+	on := true
+	if !strings.Contains(workflow(&config.Config{CI: config.CI{Trigger: "release", Dispatch: &on}}), "workflow_dispatch:") {
+		t.Error("dispatch = true didn't add workflow_dispatch")
+	}
+	if strings.Contains(workflow(&config.Config{CI: config.CI{Dispatch: &off}}), "workflow_dispatch") {
+		t.Error("dispatch = false kept workflow_dispatch")
+	}
+	if py, err := exec.LookPath("python3"); err == nil {
+		cmd := exec.Command(py, "-c", "import sys, yaml; yaml.safe_load(sys.stdin)")
+		cmd.Stdin = strings.NewReader(rel)
+		if out, err := cmd.CombinedOutput(); err != nil && !strings.Contains(string(out), "No module named") {
+			t.Errorf("not YAML: %v\n%s", err, out)
+		}
+	}
+}

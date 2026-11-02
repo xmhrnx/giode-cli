@@ -139,3 +139,35 @@ largeHeap = "true"
 		t.Errorf("attributes %q, want %q", got, want)
 	}
 }
+
+func TestFourPartVersionAndBuild(t *testing.T) {
+	c, err := load(t, "[app]\nname = \"S\"\nid = \"com.example.s\"\nversion = \"1.2.3.7\"\n")
+	if err != nil || c.App.Version != "1.2.3" || c.App.Build != 7 {
+		t.Fatalf("four-part app.version: %q build %d, %v", c.App.Version, c.App.Build, err)
+	}
+	t.Setenv("GIODE_VERSION", "v2.0.1.42")
+	c, err = load(t, "[app]\nname = \"S\"\nid = \"com.example.s\"\nversion = \"1.0.0\"\nbuild = 3\n")
+	if err != nil || c.App.Version != "2.0.1" || c.App.Build != 42 {
+		t.Fatalf("four-part tag: %q build %d, %v", c.App.Version, c.App.Build, err)
+	}
+	t.Setenv("GIODE_BUILD", "99")
+	c, _ = load(t, "[app]\nname = \"S\"\nid = \"com.example.s\"\n")
+	if c.App.Build != 99 {
+		t.Errorf("$GIODE_BUILD should win over the tag's build: %d", c.App.Build)
+	}
+	t.Setenv("GIODE_BUILD", "")
+	t.Setenv("GIODE_VERSION", "1.0.0.0")
+	if _, err := load(t, "[app]\nname = \"S\"\nid = \"com.example.s\"\n"); err == nil || !strings.Contains(err.Error(), "at least 1") {
+		t.Errorf("a build of 0 from the tag: %v, want an error", err)
+	}
+	t.Setenv("GIODE_VERSION", "")
+	if _, err := load(t, "[app]\nname = \"S\"\nid = \"com.example.s\"\nbuild = 0\n"); err == nil {
+		t.Error("app.build = 0 was accepted")
+	}
+	if c, err := load(t, "[app]\nname = \"S\"\nid = \"com.example.s\"\n"); err != nil || c.App.Build != 1 {
+		t.Errorf("no build set: %d, %v; want the default 1", c.App.Build, err)
+	}
+	if _, err := load(t, "[app]\nname = \"S\"\nid = \"com.example.s\"\nversion = \"1.2.3.x\"\n"); err == nil {
+		t.Error("a non-numeric fourth part was accepted")
+	}
+}

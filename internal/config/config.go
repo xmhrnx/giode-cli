@@ -59,8 +59,9 @@ type App struct {
 	// package name and the Apple bundle ID.
 	ID string `toml:"id"`
 	// Version is major.minor.patch; Build is the build number (Android
-	// versionCode, CFBundleVersion), which stores require to grow with
-	// every upload.
+	// versionCode, CFBundleVersion), at least 1, which stores require to
+	// grow with every upload. A four-part version (1.4.2.7) sets both:
+	// its fourth part is the build.
 	Version string `toml:"version"`
 	Build   int    `toml:"build"`
 	// Icon is a square PNG, at least 512x512 for the stores.
@@ -402,17 +403,34 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("%s: unknown settings: %s", path, strings.Join(keys, ", "))
 	}
 	c.Dir = filepath.Dir(path)
-	// CI sets the version from a tag and the build number from its run
-	// counter.
+	// A four-part version (1.4.2.7) carries the build number in its
+	// fourth part, as Android's version codes do.
+	buildSet := md.IsDefined("app", "build")
+	if b, ok, err := splitBuild(&c.App.Version); err != nil {
+		return nil, fmt.Errorf("%s: app.version: %w", path, err)
+	} else if ok {
+		c.App.Build, buildSet = b, true
+	}
+	// CI sets the version from a tag, which may carry the build in a
+	// fourth part, and the build number from $GIODE_BUILD (its run
+	// counter, unless [ci] build = "tag").
 	if v := strings.TrimPrefix(os.Getenv("GIODE_VERSION"), "v"); v != "" {
 		c.App.Version = v
+		if b, ok, err := splitBuild(&c.App.Version); err != nil {
+			return nil, fmt.Errorf("$GIODE_VERSION: %w", err)
+		} else if ok {
+			c.App.Build, buildSet = b, true
+		}
 	}
 	if b := os.Getenv("GIODE_BUILD"); b != "" {
 		n, err := strconv.Atoi(b)
 		if err != nil {
 			return nil, fmt.Errorf("$GIODE_BUILD %q isn't a number", b)
 		}
-		c.App.Build = n
+		c.App.Build, buildSet = n, true
+	}
+	if buildSet && c.App.Build < 1 {
+		return nil, fmt.Errorf("%s: the build number is %d: Android's version code and the stores need it to be at least 1 (app.build, $GIODE_BUILD or a four-part version's last part)", path, c.App.Build)
 	}
 	// Signing settings CI keeps in secrets rather than the repository.
 	if v := os.Getenv("GIODE_IOS_PROFILE"); v != "" {
@@ -524,6 +542,9 @@ func (c *Config) Validate() error {
 	}
 	if t := c.CI.Trigger; t != "" && t != "tag" && t != "release" {
 		errs = append(errs, fmt.Errorf("ci.trigger is %q; use tag or release", t))
+	}
+	if b := c.CI.Build; b != "" && b != "run" && b != "tag" {
+		errs = append(errs, fmt.Errorf("ci.build is %q; use run or tag", b))
 	}
 	for k, v := range map[string]string{"ios.push": c.IOS.Push, "macos.push": c.MacOS.Push} {
 		if v != "" && v != "development" && v != "production" {
@@ -667,6 +688,14 @@ type CI struct {
 	// Test runs before any build, on Linux, and a failure stops the
 	// release: "go test ./..." by default; "" runs none.
 	Test *string `toml:"test"`
+	// Build is where the build number comes from: "run" (the default),
+	// the workflow's run number; or "tag", the fourth part of a
+	// four-part tag (v1.4.2.7), for teams numbering builds themselves.
+	Build string `toml:"build"`
+	// Dispatch adds a "Run workflow" button (workflow_dispatch) to the
+	// Actions tab: on by default with trigger "tag", off with
+	// "release", for a pipeline that only runs on releases.
+	Dispatch *bool `toml:"dispatch"`
 }
 
 // CISetup holds setup commands by runner OS.
@@ -751,4 +780,20 @@ func CheckVersion(v string) error {
 		return fmt.Errorf("a version is major.minor.patch, like 1.0.0")
 	}
 	return nil
+}
+
+// splitBuild turns a four-part version ("1.4.2.7") into its first three
+// parts and returns the fourth as the build number; other versions are
+// left as they are.
+func splitBuild(version *string) (build int, ok bool, err error) {
+	parts := strings.Split(*version, ".")
+	if len(parts) != 4 {
+		return 0, false, nil
+	}
+	n, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return 0, false, fmt.Errorf("%q: the fourth part (the build number) isn't a number", *version)
+	}
+	*version = strings.Join(parts[:3], ".")
+	return n, true, nil
 }

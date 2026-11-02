@@ -122,6 +122,8 @@ Windows runner with MSYS2's MINGW64 toolchain:
 
 	[ci]
 	trigger = "release"
+	build = "tag"                   # build number from v1.4.2.7's last part, not the run number
+	dispatch = false                # no "Run workflow" button (the default with trigger = "release")
 	test = "go vet ./... && go test ./..."
 	windows_msys2 = true
 	arch = ["amd64", "arm64"]       # builds per CPU: Linux on ubuntu-24.04-arm,
@@ -209,6 +211,9 @@ type ciData struct {
 	// Release builds when a GitHub release is published, rather than
 	// on a pushed tag.
 	Release bool
+	// BuildFromTag takes the build number from a four-part tag rather
+	// than the run number; Dispatch adds workflow_dispatch.
+	BuildFromTag, Dispatch bool
 	// Test holds the test commands, indented; empty runs no test job.
 	Test string
 	// The platforms built: Linux packages, the web, Android, macOS,
@@ -246,6 +251,7 @@ func newCIData(c *config.Config) ciData {
 		SetupMac:     setupIndent(c.CI.Setup.MacOS, "          "),
 		SetupWin:     setupIndent(c.CI.Setup.Windows, "          "),
 		Release:      c.CI.Trigger == "release",
+		BuildFromTag: c.CI.Build == "tag",
 		Test:         setupIndent(test, "          "),
 		LinuxPkgs:    has("linux"),
 		Web:          has("web"),
@@ -274,6 +280,10 @@ func newCIData(c *config.Config) ciData {
 		} else {
 			d.CrossWindows = append(d.CrossWindows, a)
 		}
+	}
+	d.Dispatch = !d.Release
+	if c.CI.Dispatch != nil {
+		d.Dispatch = *c.CI.Dispatch
 	}
 	d.LinuxJob = d.LinuxPkgs || d.Web || d.Android || len(d.CrossWindows) > 0
 	var needs []string
@@ -325,14 +335,19 @@ on:
   push:
     tags: ["v*"]
 [[- end]]
+[[- if .Dispatch]]
   workflow_dispatch:
+[[- end]]
 
 permissions:
   contents: write
 
 env:
+  # A four-part tag (v1.4.2.7) also sets the build number.
   GIODE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+[[- if not .BuildFromTag]]
   GIODE_BUILD: ${{ github.run_number }}
+[[- end]]
 
 jobs:
 [[- if .Test]]
