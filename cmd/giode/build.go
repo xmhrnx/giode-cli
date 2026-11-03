@@ -436,6 +436,17 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 		}
 		g.Extras = gogio.Extras{InfoPlist: plist, PrivacyManifest: privacy, Entitlements: c.IOSEntitlements(),
 			SplashColor: c.App.SplashColor, SplashColorLight: c.App.SplashColorLight}
+		if c.App.ShareTarget {
+			ext := &gogio.ShareExtension{AppGroup: c.IOSAppGroup(), Scheme: c.IOSShareScheme()}
+			if target == "ios" {
+				if c.IOS.ShareProfile == "" {
+					return g, errors.New("device builds with app.share_target need ios.share_profile, a provisioning profile for the share extension (bundle ID " + c.App.ID + ".share, App Group " + c.IOSAppGroup() + ")")
+				}
+				ext.Profile = c.Path(c.IOS.ShareProfile)
+			}
+			g.Extras.ShareExtension = ext
+			g.Schemes = append(append([]string(nil), g.Schemes...), c.IOSShareScheme())
+		}
 		platform, file = "ios", binaryName(c)+".ipa"
 		if target == "ios-sim" {
 			// gogio builds simulator apps for amd64; Xcode runs them on

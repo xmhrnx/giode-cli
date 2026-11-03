@@ -63,7 +63,7 @@ jobs:
           sed -i 's/^# keep_alive = true.*/keep_alive = true/; s/^# permissions = .*/permissions = ["network", "camera"]/' demo/giode.toml
           # The app's own Java, compiled into the APK, and an attribute
           # on <application>.
-          sed -i 's/^\[app\]$/[app]\nsplash_color = "#0A0A0B"\nsplash_color_light = "#F4F4F6"/' demo/giode.toml
+          sed -i 's/^\[app\]$/[app]\nsplash_color = "#0A0A0B"\nsplash_color_light = "#F4F4F6"\nshare_target = true/' demo/giode.toml
           sed -i 's/^\[android\]$/[android]\njava = ["java"]\nicon_background = "#0f172a"\nicon_monochrome = "assets\/icon.png"/' demo/giode.toml
           printf '\n[android.application_attributes]\nrequestLegacyExternalStorage = "true"\n' >> demo/giode.toml
           mkdir -p demo/java/org/giode/demo
@@ -95,7 +95,7 @@ jobs:
         run: |
           aapt2=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
           "$aapt2" dump xmltree --file AndroidManifest.xml dist/android/Demo.apk | tee manifest.txt
-          for want in org.giode.mobile.KeepAliveService FOREGROUND_SERVICE_DATA_SYNC POST_NOTIFICATIONS android.permission.CAMERA android.permission.INTERNET requestLegacyExternalStorage; do
+          for want in org.giode.mobile.KeepAliveService org.giode.mobile.ShareActivity android.intent.action.SEND_MULTIPLE FOREGROUND_SERVICE_DATA_SYNC POST_NOTIFICATIONS android.permission.CAMERA android.permission.INTERNET requestLegacyExternalStorage; do
             grep -q "$want" manifest.txt || { echo "manifest lacks $want"; exit 1; }
           done
           unzip -p dist/android/Demo.apk 'classes*.dex' | grep -aq 'Lorg/giode/demo/Hello;' || { echo "the app's Java class isn't in the APK"; exit 1; }
@@ -104,6 +104,9 @@ jobs:
           grep -q 'ic_launcher_monochrome.png' apk.txt || { echo "no monochrome layer"; exit 1; }
           "$aapt2" dump xmltree --file res/mipmap-anydpi-v26/ic_launcher.xml dist/android/Demo.apk | tee icon.txt
           grep -q monochrome icon.txt || { echo "ic_launcher.xml lacks <monochrome>"; exit 1; }
+          # The splash colour: light and night window backgrounds, Android 12's splash.
+          "$aapt2" dump resources dist/android/Demo.apk | tee res.txt | grep -q 'color/giode_splash' || { echo "no splash colour"; exit 1; }
+          grep -qi 'f4f4f6' res.txt && grep -qi '0a0a0b' res.txt || { echo "splash colours missing"; exit 1; }
       - name: Check the other outputs
         working-directory: ${{ runner.temp }}/demo
         run: |
@@ -139,7 +142,7 @@ jobs:
           [ios.plist]
           ITSAppUsesNonExemptEncryption = false
           TOML
-          perl -pi -e 's/^\[app\]$/[app]\nsplash_color = "#0A0A0B"\nsplash_color_light = "#F4F4F6"/' demo/giode.toml
+          perl -pi -e 's/^\[app\]$/[app]\nsplash_color = "#0A0A0B"\nsplash_color_light = "#F4F4F6"\nshare_target = true/' demo/giode.toml
           cat demo/giode.toml
       - name: Build
         working-directory: ${{ runner.temp }}/demo
@@ -152,6 +155,12 @@ jobs:
           grep -q '"NSMicrophoneUsageDescription" => "To dictate."' plist.txt
           grep -q '"ITSAppUsesNonExemptEncryption" => false' plist.txt
           grep -q '"UIColorName" => "GiodeLaunchBackground"' plist.txt
+          grep -q '"GiodeAppGroup" => "group.org.giode.demo"' plist.txt
+          plutil -p dist/ios/Demo.app/PlugIns/Share.appex/Info.plist | tee share.txt
+          grep -q '"NSExtensionPointIdentifier" => "com.apple.share-services"' share.txt
+          lipo -info dist/ios/Demo.app/PlugIns/Share.appex/Share
+          codesign -d --entitlements - dist/ios/Demo.app/PlugIns/Share.appex 2>&1 | tee ents.txt
+          grep -q 'group.org.giode.demo' ents.txt
           test -d dist/macos/Demo.app
 
   # Builds, signs, installs and uninstalls the Windows installer on

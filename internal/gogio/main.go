@@ -170,6 +170,8 @@ type Extras struct {
 	// screen, and iOS's launch screen. SplashColorLight, when set, is
 	// used instead in light mode. Empty keeps white.
 	SplashColor, SplashColorLight string
+	// ShareExtension, when set, builds a share extension into iOS apps.
+	ShareExtension *ShareExtension
 }
 
 // Build builds and packages the Go package pkg as gogio would.

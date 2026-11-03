@@ -82,6 +82,12 @@ type App struct {
 	// https://example.com/app/*. giode links writes the files the site
 	// must serve to prove the app may.
 	Links []string `toml:"links"`
+	// ShareTarget offers the app in the system share sheet, for any
+	// files and text, which reach giode.Config.OnShareReceived. On
+	// Android it registers for ACTION_SEND and ACTION_SEND_MULTIPLE; on
+	// iOS it builds, signs and embeds a share extension that hands the
+	// items to the app through an App Group (ios.app_group).
+	ShareTarget bool `toml:"share_target"`
 	// Publisher is who makes the app, shown by installers and in
 	// Windows' list of installed apps; Description a one-line summary;
 	// Website the app's home page.
@@ -215,6 +221,14 @@ type IOS struct {
 	// entitlement, which the provisioning profile must allow. It also
 	// lets silent pushes wake the app (UIBackgroundModes).
 	Push string `toml:"push"`
+	// AppGroup is the App Group app.share_target's extension shares with
+	// the app, "group.<app.id>" by default. Both provisioning profiles
+	// must allow it.
+	AppGroup string `toml:"app_group"`
+	// ShareProfile is the provisioning profile signing the share
+	// extension (bundle ID <app.id>.share) in device builds with
+	// app.share_target; $GIODE_IOS_SHARE_PROFILE overrides it.
+	ShareProfile string `toml:"share_profile"`
 }
 
 // MacOS configures macOS app bundles.
@@ -455,6 +469,9 @@ func Load(path string) (*Config, error) {
 	if v := os.Getenv("GIODE_IOS_TEAM_ID"); v != "" {
 		c.IOS.TeamID = v
 	}
+	if v := os.Getenv("GIODE_IOS_SHARE_PROFILE"); v != "" {
+		c.IOS.ShareProfile = v
+	}
 	c.setDefaults()
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
@@ -525,6 +542,9 @@ func (c *Config) Validate() error {
 	}
 	if c.App.SplashColorLight != "" && c.App.SplashColor == "" {
 		errs = append(errs, errors.New("app.splash_color_light needs app.splash_color, the dark mode colour"))
+	}
+	if g := c.IOS.AppGroup; g != "" && (!strings.HasPrefix(g, "group.") || strings.ContainsAny(g, " /")) {
+		errs = append(errs, fmt.Errorf("ios.app_group %q must look like group.com.example.app", g))
 	}
 	errs = append(errs, c.validateContextActions()...)
 	errs = append(errs, c.validateFileTypes()...)

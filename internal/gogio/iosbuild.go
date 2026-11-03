@@ -101,7 +101,20 @@ func buildIOS(tmpDir, target string, bi *buildInfo) error {
 			provisions = p
 		}
 
-		if err := signApple(bi.appID, tmpDir, embedded, appDir, provisions); err != nil {
+		deep := true
+		if ext := extras.ShareExtension; ext != nil {
+			if ext.Profile == "" {
+				return errors.New("sign: the share extension needs its own provisioning profile (ios.share_profile)")
+			}
+			appex := filepath.Join(appDir, "PlugIns", shareExtName+".appex")
+			if err := signApple(shareExtID(bi.appID), tmpDir, filepath.Join(appex, "embedded.mobileprovision"), appex, []string{ext.Profile}, shareExtEntitlements(ext), false); err != nil {
+				return fmt.Errorf("share extension: %w", err)
+			}
+			// --deep would re-sign the extension with the app's
+			// entitlements.
+			deep = false
+		}
+		if err := signApple(bi.appID, tmpDir, embedded, appDir, provisions, extras.Entitlements, deep); err != nil {
 			return err
 		}
 		return zipDir(out, tmpDir, "Payload")
@@ -111,7 +124,7 @@ func buildIOS(tmpDir, target string, bi *buildInfo) error {
 }
 
 // signApple is shared between iOS and macOS.
-func signApple(appID, tmpDir, embedded, app string, provisions []string) error {
+func signApple(appID, tmpDir, embedded, app string, provisions []string, ents map[string]any, deep bool) error {
 	provInfo := filepath.Join(tmpDir, "provision.plist")
 	var avail []string
 	for _, prov := range provisions {
@@ -169,20 +182,17 @@ func signApple(appID, tmpDir, embedded, app string, provisions []string) error {
 		if err := os.WriteFile(entFile, []byte(entitlements), 0o660); err != nil {
 			return err
 		}
-		if err := applyEntitlements(entFile, extras.Entitlements); err != nil {
+		if err := applyEntitlements(entFile, ents); err != nil {
 			return err
 		}
 		identity := sha1.Sum(certDER)
 		idHex := hex.EncodeToString(identity[:])
-		_, err = runCmd(exec.Command(
-			"codesign",
-			"--sign", idHex,
-			"--deep",
-			"--force",
-			"--options", "runtime",
-			"--entitlements",
-			entFile,
-			app))
+		args := []string{"--sign", idHex}
+		if deep {
+			args = append(args, "--deep")
+		}
+		args = append(args, "--force", "--options", "runtime", "--entitlements", entFile, app)
+		_, err = runCmd(exec.Command("codesign", args...))
 		return err
 	}
 	return fmt.Errorf("sign: no valid provisioning profile found for bundle id %q among %v", appID, avail)
@@ -276,7 +286,30 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 	if _, err := runCmd(exec.Command("plutil", "-convert", "binary1", plistFile)); err != nil {
 		return err
 	}
+	if ext := extras.ShareExtension; ext != nil {
+		appex, err := buildShareExtension(tmpDir, target, app, bi, ext)
+		if err != nil {
+			return err
+		}
+		if forSimulator(bi.archs) {
+			// Device builds are signed with their profiles later.
+			if err := adhocSign(tmpDir, appex, shareExtEntitlements(ext)); err != nil {
+				return err
+			}
+			return adhocSign(tmpDir, app, extras.Entitlements)
+		}
+	}
 	return nil
+}
+
+// forSimulator reports whether archs are a simulator build's.
+func forSimulator(archs []string) bool {
+	for _, a := range archs {
+		if a == "arm" || a == "arm64" {
+			return false
+		}
+	}
+	return true
 }
 
 // iosIcons builds an asset catalog - the app icon when icon isn't

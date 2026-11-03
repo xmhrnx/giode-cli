@@ -109,12 +109,15 @@ version = "1.4.0"
 build = 12                    # Android versionCode, CFBundleVersion: at least 1, raise per upload; giode.AppVersion and giode.AppBuild at run time
                               # (a four-part version, "1.4.0.12", sets both)
 icon = "assets/icon.png"      # square PNG, 1024x1024 for the stores
+splash_color = "#0A0A0B"      # Android/iOS launch background (dark mode with the next)
+splash_color_light = "#F4F4F6"  # light mode's; Android 12+ shows the icon on it
 package = "."                 # main package
 publisher = "Example Ltd"     # shown by installers and Windows' app list
 description = "An AI agent in your pocket."
 website = "https://example.com"
 schemes = ["agent"]           # URL schemes the app opens
 links = ["https://example.com/app/*"]   # universal links / App Links; see giode links
+share_target = true           # in the share sheet for files and text (Config.OnShareReceived)
 tags = ""                     # Go build tags
 renderer = "opengl"           # Gio's OpenGL renderer on macOS and iOS (Config.Renderer)
 gio_patches = true            # build against Gio with giode's patches (default true)
@@ -148,6 +151,8 @@ libraries = ["libs/vendor.aar"]   # local .aar and .jar files built in
 min_os = 15
 profile = "Agent.mobileprovision"   # for device builds ($GIODE_IOS_PROFILE overrides)
 push = "production"           # giode/push: aps-environment (development or production)
+share_profile = "AgentShare.mobileprovision"  # app.share_target's extension ($GIODE_IOS_SHARE_PROFILE)
+app_group = "group.com.example.agent"         # the extension's App Group (this is the default)
 
 [ios.usage]                   # shown when iOS asks for a permission
 camera = "To attach photos you take."
@@ -179,6 +184,8 @@ pkg_config_path = "win64/lib/pkgconfig" # the Windows libraries' .pc files
 per_machine = false           # true: all users, Program Files, asks for admin
 desktop_shortcut = true
 license = "assets/license.txt"
+firewall = true               # inbound firewall rule for the app; removed on uninstall
+# firewall_public = true      # also on public networks (default: private and domain)
 
 [windows.signing]
 certificate = "codesign.pfx"  # password in $GIODE_WINDOWS_CERT_PASS
@@ -283,6 +290,30 @@ with publisher, version and size, and an uninstaller. By default it installs for
 current user into `%LOCALAPPDATA%\Programs`, without an administrator prompt;
 `per_machine = true` installs for everyone into Program Files. It runs silently with
 `/S`. The uninstaller isn't signed yet.
+
+`firewall = true` adds an inbound Windows Firewall rule for the app's executable on
+private and domain networks (`firewall_public = true` adds public ones), so a server or
+LAN discovery in the app works without Windows asking, and the uninstaller removes it. A
+per-machine installer adds it while elevated; a per-user one asks for administrator
+rights once, for the rule alone, and installs anyway if that's declined.
+
+## Launch screen colour
+
+`splash_color` fills the screen from launch until the app's first frame, instead of white:
+Android's window background and its Android 12+ splash screen (with the app icon on it),
+and iOS's launch screen, through a named colour in the app's asset catalog.
+`splash_color_light` is the light mode colour; `splash_color` is then the dark mode one.
+
+## Share target
+
+`share_target = true` puts the app in the system share sheet for any files and text,
+received by `giode.Config.OnShareReceived`. Android gets an activity registered for
+`ACTION_SEND` and `ACTION_SEND_MULTIPLE`. iOS gets a share extension, `Share.appex` with
+bundle ID `<app.id>.share`, built, signed and embedded in the app, sharing the App Group
+`group.<app.id>` (`ios.app_group`) with it. For device builds, register the extension's
+App ID and the App Group in the developer portal, enable the group on both App IDs, and
+point `ios.share_profile` at the extension's provisioning profile. Simulator builds are
+signed ad hoc and need neither.
 
 ## Patched Gio
 
