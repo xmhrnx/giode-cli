@@ -18,6 +18,8 @@ import (
 	_ "image/jpeg"
 
 	"golang.org/x/image/draw"
+
+	"github.com/xmhrnx/giode-cli/internal/progress"
 )
 
 // Options describe the app to install.
@@ -122,12 +124,14 @@ func Build(o Options) error {
 	if o.Verbose {
 		fmt.Fprintln(os.Stderr, "+", strings.Join(cmd.Args, " "))
 	}
+	done := progress.Command(cmd)
 	out, err := cmd.CombinedOutput()
-	if o.Verbose || err != nil {
+	done(err)
+	if o.Verbose {
 		os.Stderr.Write(out)
 	}
 	if err != nil {
-		return fmt.Errorf("makensis: %w", err)
+		return fmt.Errorf("makensis: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

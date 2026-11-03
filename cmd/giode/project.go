@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/progress"
 )
 
 // verbose prints the commands giode runs.
@@ -75,7 +77,24 @@ func run(cmd *exec.Cmd) error {
 	if verbose {
 		fmt.Fprintln(os.Stderr, "+", strings.Join(cmd.Args, " "))
 	}
-	if err := cmd.Run(); err != nil {
+	// While the build's progress redraws the terminal, the command's
+	// output is kept, and shown only if it fails.
+	var captured bytes.Buffer
+	if progress.Live() {
+		if cmd.Stdout == os.Stdout {
+			cmd.Stdout = &captured
+		}
+		if cmd.Stderr == os.Stderr {
+			cmd.Stderr = &captured
+		}
+	}
+	done := progress.Command(cmd)
+	err := cmd.Run()
+	done(err)
+	if err != nil {
+		if out := strings.TrimSpace(captured.String()); out != "" {
+			return fmt.Errorf("%s: %w\n%s", strings.Join(cmd.Args, " "), err, out)
+		}
 		return fmt.Errorf("%s: %w", strings.Join(cmd.Args, " "), err)
 	}
 	return nil

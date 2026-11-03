@@ -19,6 +19,8 @@ import (
 
 	"golang.org/x/image/draw"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/xmhrnx/giode-cli/internal/progress"
 )
 
 // The build settings, set by Build from its Options. They're package
@@ -253,7 +255,9 @@ func runCmdRaw(cmd *exec.Cmd) ([]byte, error) {
 	if *printCommands {
 		fmt.Printf("%s\n", strings.Join(cmd.Args, " "))
 	}
+	done := progress.Command(cmd)
 	out, err := cmd.Output()
+	done(err)
 	if err == nil {
 		return out, nil
 	}

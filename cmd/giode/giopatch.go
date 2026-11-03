@@ -9,6 +9,7 @@ import (
 
 	"github.com/xmhrnx/giode-cli/internal/config"
 	"github.com/xmhrnx/giode-cli/internal/giopatch"
+	"github.com/xmhrnx/giode-cli/internal/progress"
 )
 
 // gioBuild is how a build uses Gio: the go.mod of the patched copy
@@ -49,10 +50,12 @@ func prepareGio(c *config.Config, target string) (gioBuild, error) {
 	if !enabled {
 		return b, nil
 	}
+	done := progress.Begin("Preparing patched Gio")
 	modfile, cleanup, err := giopatch.Prepare(c.Dir, giopatch.All)
+	done(err)
 	switch {
 	case errors.Is(err, giopatch.ErrSkipped):
-		fmt.Fprintf(os.Stderr, "  note: building against plain Gio, without giode's patches (%v); Config.Underlay and Config.Renderer won't work\n", err)
+		progress.Logf("building against plain Gio, without giode's patches (%v); Config.Underlay and Config.Renderer won't work", err)
 		return b, nil
 	case err != nil:
 		return b, fmt.Errorf("patching Gio: %w (set app.gio_patches = false to skip)", err)

@@ -11,6 +11,7 @@ import (
 	"github.com/xmhrnx/giode-cli/internal/config"
 	"github.com/xmhrnx/giode-cli/internal/linuxpkg"
 	"github.com/xmhrnx/giode-cli/internal/msix"
+	"github.com/xmhrnx/giode-cli/internal/progress"
 	"github.com/xmhrnx/giode-cli/internal/winget"
 )
 
@@ -36,7 +37,7 @@ func linuxApp(c *config.Config, bin, arch string) linuxpkg.App {
 func buildLinuxPackage(c *config.Config, kind string, o buildOpts) (string, error) {
 	binOpts := o
 	binOpts.output = ""
-	bin, err := buildLinux(c, binOpts)
+	bin, err := buildTarget(c, "linux", binOpts)
 	if err != nil {
 		return "", err
 	}
@@ -77,6 +78,10 @@ func buildLinuxPackage(c *config.Config, kind string, o buildOpts) (string, erro
 	if o.output != "" {
 		out, _ = filepath.Abs(o.output)
 	}
+	if kind == "deb" || kind == "rpm" {
+		done := progress.Begin("Packing the ." + kind)
+		defer func() { done(err) }()
+	}
 	switch kind {
 	case "deb":
 		err = linuxpkg.Deb(a, out)
@@ -96,7 +101,7 @@ func buildLinuxPackage(c *config.Config, kind string, o buildOpts) (string, erro
 			return "", ferr
 		}
 		if !built {
-			fmt.Fprintf(os.Stderr, "  note: flatpak-builder isn't installed; wrote the manifest to %s (flatpak-builder --user --install-deps-from=flathub build %s.json)\n", manifestDir, c.App.ID)
+			progress.Logf("flatpak-builder isn't installed; wrote the manifest to %s (flatpak-builder --user --install-deps-from=flathub build %s.json)", manifestDir, c.App.ID)
 			return filepath.Join(manifestDir, c.App.ID+".json"), nil
 		}
 	}
@@ -150,11 +155,14 @@ func buildMSIX(c *config.Config, o buildOpts) (string, error) {
 	for _, ft := range c.WindowsFileTypes() {
 		msixTypes = append(msixTypes, msix.FileType{Name: strings.TrimPrefix(ft.Extensions[0], "."), DisplayName: ft.Name, Extensions: ft.Extensions})
 	}
-	if err := msix.Write(msix.App{
+	done := progress.Begin("Packing the MSIX")
+	err = msix.Write(msix.App{
 		Name: c.App.Name, IdentityName: name, Publisher: m.Publisher, PublisherDisplayName: display,
 		Description: c.App.Description, Version: c.App.Version, Exe: exe, Icon: c.Path(c.App.Icon),
 		Arch: arch, Protocols: protocols, Files: dlls, FileTypes: msixTypes, StartupTask: m.StartupTask,
-	}, out); err != nil {
+	}, out)
+	done(err)
+	if err != nil {
 		return "", err
 	}
 	if o.release {
@@ -162,7 +170,7 @@ func buildMSIX(c *config.Config, o buildOpts) (string, error) {
 			return "", err
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, "  note: the package is unsigned; Windows installs only signed MSIX packages (use -release with windows.signing)")
+		progress.Logf("the package is unsigned; Windows installs only signed MSIX packages (use -release with windows.signing)")
 	}
 	return out, nil
 }
@@ -172,7 +180,7 @@ func buildMSIX(c *config.Config, o buildOpts) (string, error) {
 func buildWinget(c *config.Config, o buildOpts) (string, error) {
 	setupOpts := o
 	setupOpts.output = ""
-	setup, err := buildWindowsInstaller(c, setupOpts)
+	setup, err := buildTarget(c, "windows-installer", setupOpts)
 	if err != nil {
 		return "", err
 	}
@@ -189,11 +197,14 @@ func buildWinget(c *config.Config, o buildOpts) (string, error) {
 	if o.output != "" {
 		dir, _ = filepath.Abs(o.output)
 	}
-	return winget.Write(winget.App{
+	done := progress.Begin("Writing the winget manifests")
+	out, err := winget.Write(winget.App{
 		ID: id, Name: c.App.Name, Version: c.App.Version, Publisher: c.App.Publisher,
 		Description: c.App.Description, License: w.License, Website: c.App.Website, ProductCode: c.App.ID,
 		Installer: setup, InstallerURL: w.InstallerURL, PerMachine: c.Windows.Installer.PerMachine, Arch: arch,
 	}, dir)
+	done(err)
+	return out, err
 }
 
 // wingetName makes an identifier part from a name: letters and digits.
