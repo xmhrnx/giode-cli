@@ -66,6 +66,13 @@ type App struct {
 	Build   int    `toml:"build"`
 	// Icon is a square PNG, at least 512x512 for the stores.
 	Icon string `toml:"icon"`
+	// SplashColor ("#RRGGBB") fills the screen on Android and iOS until
+	// the first frame: the window background and Android 12+'s splash
+	// screen (with the app's icon), and iOS's launch screen.
+	// SplashColorLight, when set, is used in light mode instead; then
+	// SplashColor is the dark mode one. Empty keeps white.
+	SplashColor      string `toml:"splash_color"`
+	SplashColorLight string `toml:"splash_color_light"`
 	// Package is the main Go package, "." by default.
 	Package string `toml:"package"`
 	// Schemes are URL schemes the app opens (myapp://...).
@@ -314,6 +321,12 @@ type WindowsInstaller struct {
 	// DesktopShortcut adds a desktop shortcut as well as the Start menu
 	// one.
 	DesktopShortcut bool `toml:"desktop_shortcut"`
+	// Firewall adds an inbound Windows Firewall rule for the app on
+	// install (private and domain networks; FirewallPublic adds public
+	// ones) and removes it on uninstall, for apps other devices connect
+	// to. Per-user installs ask for administrator rights for this step.
+	Firewall       bool `toml:"firewall"`
+	FirewallPublic bool `toml:"firewall_public"`
 }
 
 // Update configures the giode update package for desktop builds.
@@ -488,6 +501,9 @@ var (
 )
 
 // Validate reports settings that would fail a build.
+// hexColorRE matches #RRGGBB.
+var hexColorRE = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+
 func (c *Config) Validate() error {
 	var errs []error
 	if c.App.Name == "" {
@@ -501,6 +517,14 @@ func (c *Config) Validate() error {
 	}
 	if c.App.Build < 1 {
 		errs = append(errs, fmt.Errorf("app.build must be at least 1"))
+	}
+	for _, sc := range []struct{ key, v string }{{"app.splash_color", c.App.SplashColor}, {"app.splash_color_light", c.App.SplashColorLight}} {
+		if sc.v != "" && !hexColorRE.MatchString(sc.v) {
+			errs = append(errs, fmt.Errorf("%s %q must be a colour like #0A0A0B", sc.key, sc.v))
+		}
+	}
+	if c.App.SplashColorLight != "" && c.App.SplashColor == "" {
+		errs = append(errs, errors.New("app.splash_color_light needs app.splash_color, the dark mode colour"))
 	}
 	errs = append(errs, c.validateContextActions()...)
 	errs = append(errs, c.validateFileTypes()...)

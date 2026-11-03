@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -252,8 +253,13 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 	if err := os.WriteFile(plistFile, []byte(infoPlist), 0o660); err != nil {
 		return err
 	}
-	if _, err := os.Stat(bi.iconPath); err == nil {
-		assetPlist, err := iosIcons(bi, tmpDir, app, bi.iconPath)
+	_, iconErr := os.Stat(bi.iconPath)
+	if iconErr == nil || extras.SplashColor != "" {
+		icon := ""
+		if iconErr == nil {
+			icon = bi.iconPath
+		}
+		assetPlist, err := iosIcons(bi, tmpDir, app, icon)
 		if err != nil {
 			return err
 		}
@@ -273,12 +279,31 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 	return nil
 }
 
-// iosIcons builds an asset catalog and compile it with the Xcode command actool.
-// iosIcons returns the asset plist file to be merged into Info.plist.
+// iosIcons builds an asset catalog - the app icon when icon isn't
+// empty, the launch screen's colour with a splash colour - and compiles
+// it with the Xcode command actool. It returns the asset plist file to
+// be merged into Info.plist.
 func iosIcons(bi *buildInfo, tmpDir, appDir, icon string) (string, error) {
 	assets := filepath.Join(tmpDir, "Assets.xcassets")
 	if err := os.Mkdir(assets, 0o700); err != nil {
 		return "", err
+	}
+	if extras.SplashColor != "" {
+		set := filepath.Join(assets, launchColorName+".colorset")
+		if err := os.Mkdir(set, 0o700); err != nil {
+			return "", err
+		}
+		js, err := colorSetJSON(extras.SplashColor, extras.SplashColorLight)
+		if err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(set, "Contents.json"), js, 0o600); err != nil {
+			return "", err
+		}
+	}
+	args := []string{"--compile", appDir, "--platform", iosPlatformFor(bi.target)}
+	if icon == "" {
+		return compileAssets(bi, tmpDir, assets, args)
 	}
 	appIcon := filepath.Join(assets, "AppIcon.appiconset")
 	err := buildIcons(appIcon, icon, []iconVariant{
@@ -338,22 +363,69 @@ func iosIcons(bi *buildInfo, tmpDir, appDir, icon string) (string, error) {
 	if err := os.WriteFile(contentFile, []byte(contentJson), 0o600); err != nil {
 		return "", err
 	}
-	assetPlist := filepath.Join(tmpDir, "assets.plist")
+	return compileAssets(bi, tmpDir, assets, append(args, "--app-icon", "AppIcon"))
+}
 
+// compileAssets runs actool on an asset catalog.
+func compileAssets(bi *buildInfo, tmpDir, assets string, args []string) (string, error) {
+	assetPlist := filepath.Join(tmpDir, "assets.plist")
 	minsdk := bi.minsdk
 	if minsdk == 0 {
 		minsdk = minIOSVersion
 	}
-	compile := exec.Command(
-		"actool",
-		"--compile", appDir,
-		"--platform", iosPlatformFor(bi.target),
+	args = append(args,
 		"--minimum-deployment-target", strconv.Itoa(minsdk),
-		"--app-icon", "AppIcon",
 		"--output-partial-info-plist", assetPlist,
 		assets)
-	_, err = runCmd(compile)
+	_, err := runCmd(exec.Command("actool", args...))
 	return assetPlist, err
+}
+
+// launchColorName names the launch screen's colour in the asset
+// catalog.
+const launchColorName = "GiodeLaunchBackground"
+
+// colorSetJSON is an asset catalog colour set: dark ("#RRGGBB") for
+// dark mode and the default, light for light mode when set.
+func colorSetJSON(dark, light string) ([]byte, error) {
+	comp := func(hex string) (map[string]any, error) {
+		h := strings.TrimPrefix(hex, "#")
+		if len(h) != 6 {
+			return nil, fmt.Errorf("splash colour %q isn't #RRGGBB", hex)
+		}
+		if _, err := strconv.ParseUint(h, 16, 32); err != nil {
+			return nil, fmt.Errorf("splash colour %q isn't #RRGGBB", hex)
+		}
+		return map[string]any{
+			"color-space": "srgb",
+			"components": map[string]string{
+				"red": "0x" + h[0:2], "green": "0x" + h[2:4], "blue": "0x" + h[4:6], "alpha": "1.000",
+			},
+		}, nil
+	}
+	d, err := comp(dark)
+	if err != nil {
+		return nil, err
+	}
+	def := d
+	colors := []map[string]any{}
+	if light != "" {
+		l, err := comp(light)
+		if err != nil {
+			return nil, err
+		}
+		def = l
+	}
+	colors = append(colors, map[string]any{"idiom": "universal", "color": def})
+	colors = append(colors, map[string]any{
+		"idiom":       "universal",
+		"appearances": []map[string]string{{"appearance": "luminosity", "value": "dark"}},
+		"color":       d,
+	})
+	return json.MarshalIndent(map[string]any{
+		"colors": colors,
+		"info":   map[string]any{"author": "giode", "version": 1},
+	}, "", "  ")
 }
 
 func buildInfoPlist(bi *buildInfo) string {
@@ -376,6 +448,9 @@ func buildInfoPlist(bi *buildInfo) string {
 		MinVersion      int
 		SupportPlatform string
 		Schemes         []string
+		// SplashColor names the launch screen's colour set, when there's
+		// a splash colour.
+		SplashColor string
 	}{
 		AppName:         appName,
 		AppID:           bi.appID,
@@ -385,6 +460,9 @@ func buildInfoPlist(bi *buildInfo) string {
 		MinVersion:      bi.minsdk,
 		SupportPlatform: supportPlatform,
 		Schemes:         bi.schemes,
+	}
+	if extras.SplashColor != "" {
+		manifestSrc.SplashColor = launchColorName
 	}
 
 	tmpl, err := template.New("manifest").Parse(`<?xml version="1.0" encoding="UTF-8"?>
@@ -407,8 +485,10 @@ func buildInfoPlist(bi *buildInfo) string {
 	<string>{{.Version}}</string>
 	<key>CFBundleVersion</key>
 	<string>{{.VersionCode}}</string>
+	{{- if not .SplashColor}}
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
+	{{- end}}
 	<key>UIRequiredDeviceCapabilities</key>
 	<array><string>arm64</string></array>
 	<key>DTPlatformName</key>
@@ -448,7 +528,14 @@ func buildInfoPlist(bi *buildInfo) string {
 	<key>DTXcodeBuild</key>
 	<string>10G8</string>
 	<key>UILaunchScreen</key>
+	{{- if .SplashColor}}
+	<dict>
+		<key>UIColorName</key>
+		<string>{{.SplashColor}}</string>
+	</dict>
+	{{- else}}
 	<true/>
+	{{- end}}
     {{if .Schemes}}
 	<key>CFBundleURLTypes</key>
 	<array>

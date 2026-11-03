@@ -44,6 +44,12 @@ type Options struct {
 	// ContextMenu are Explorer context menu entries to register, and
 	// remove on uninstall.
 	ContextMenu []Verb
+	// Firewall adds an inbound Windows Firewall rule allowing the app on
+	// private and domain networks (FirewallPublic adds public ones), so
+	// devices on the network reach it without Windows' first-run prompt,
+	// and removes it on uninstall. A per-user installer asks for
+	// administrator rights for this step alone; declining skips the rule.
+	Firewall, FirewallPublic bool
 	// Output is the setup program to write.
 	Output string
 	// Verbose prints the makensis command and its output.
@@ -233,6 +239,10 @@ SetCompressor /SOLID lzma
 !define APPID {{q .ID}}
 !define EXE {{q .ExeName}}
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPID}"
+{{- if .Firewall}}
+!define FW_DELETE 'advfirewall firewall delete rule name="${APPNAME}" dir=in'
+!define FW_ADD 'advfirewall firewall add rule name="${APPNAME}" dir=in action=allow enable=yes profile={{if .FirewallPublic}}any{{else}}private,domain{{end}} program="$INSTDIR\${EXE}"'
+{{- end}}
 
 Name "${APPNAME}"
 OutFile {{q .Output}}
@@ -336,6 +346,18 @@ Section "Install"
 {{- if .FileTypes}}
 	System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 {{- end}}
+{{- if .Firewall}}
+	; An inbound firewall rule, replacing one an earlier install added.
+{{- if .PerMachine}}
+	nsExec::Exec 'netsh ${FW_DELETE}'
+	Pop $0
+	nsExec::Exec 'netsh ${FW_ADD}'
+	Pop $0
+{{- else}}
+	ExecShellWait "runas" "netsh" '${FW_DELETE}' SW_HIDE
+	ExecShellWait "runas" "netsh" '${FW_ADD}' SW_HIDE
+{{- end}}
+{{- end}}
 {{- range .ContextMenu}}
 	WriteRegStr ${REGROOT} {{q (printf "Software\\Classes\\%s" .Key)}} "MUIVerb" {{q .Label}}
 	WriteRegStr ${REGROOT} {{q (printf "Software\\Classes\\%s" .Key)}} "Icon" "$INSTDIR\${EXE}"
@@ -344,6 +366,14 @@ Section "Install"
 SectionEnd
 
 Section "Uninstall"
+{{- if .Firewall}}
+{{- if .PerMachine}}
+	nsExec::Exec 'netsh ${FW_DELETE}'
+	Pop $0
+{{- else}}
+	ExecShellWait "runas" "netsh" '${FW_DELETE}' SW_HIDE
+{{- end}}
+{{- end}}
 	Delete "$INSTDIR\${EXE}"
 {{- range .Files}}
 	Delete "$INSTDIR\{{base .}}"

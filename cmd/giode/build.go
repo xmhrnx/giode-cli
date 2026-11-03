@@ -323,6 +323,7 @@ func buildWindowsInstaller(c *config.Config, o buildOpts) (string, error) {
 		Publisher: c.App.Publisher, Website: c.App.Website,
 		Exe: exe, Icon: c.Path(c.App.Icon), License: c.Path(inst.License),
 		PerMachine: inst.PerMachine, DesktopShortcut: inst.DesktopShortcut,
+		Firewall: inst.Firewall, FirewallPublic: inst.FirewallPublic,
 		Output: out, Verbose: verbose,
 	}
 	if opts.Files, err = windowsDLLs(c, exe); err != nil {
@@ -378,7 +379,8 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 			g.Arch = strings.Join(c.Android.Arch, ",")
 		}
 		perms, manifest, app := c.AndroidExtras()
-		g.Extras = gogio.Extras{AndroidPermissions: perms, AndroidManifest: manifest, AndroidApplication: app, AndroidApplicationAttrs: c.AndroidApplicationAttrs(), AndroidActivity: c.AndroidActivityXML()}
+		g.Extras = gogio.Extras{AndroidPermissions: perms, AndroidManifest: manifest, AndroidApplication: app, AndroidApplicationAttrs: c.AndroidApplicationAttrs(), AndroidActivity: c.AndroidActivityXML(),
+			SplashColor: c.App.SplashColor, SplashColorLight: c.App.SplashColorLight}
 		values, err := c.GoogleServicesXML()
 		if err != nil {
 			return g, err
@@ -432,7 +434,8 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 		if err != nil {
 			return g, err
 		}
-		g.Extras = gogio.Extras{InfoPlist: plist, PrivacyManifest: privacy, Entitlements: c.IOSEntitlements()}
+		g.Extras = gogio.Extras{InfoPlist: plist, PrivacyManifest: privacy, Entitlements: c.IOSEntitlements(),
+			SplashColor: c.App.SplashColor, SplashColorLight: c.App.SplashColorLight}
 		platform, file = "ios", binaryName(c)+".ipa"
 		if target == "ios-sim" {
 			// gogio builds simulator apps for amd64; Xcode runs them on

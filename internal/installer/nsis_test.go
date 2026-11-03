@@ -222,3 +222,53 @@ func TestBuild_FileTypesUnderWine(t *testing.T) {
 	}
 	t.Error("file type left after uninstalling")
 }
+
+func TestScript_Firewall(t *testing.T) {
+	for _, perMachine := range []bool{false, true} {
+		o := Options{Name: "Easy Send", ID: "app.easysend", Version: "1.0.0", Exe: `C:\b\EasySend.exe`, Output: `C:\b\setup.exe`, PerMachine: perMachine, Firewall: true}
+		s, err := Script(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wants := []string{
+			`!define FW_ADD 'advfirewall firewall add rule name="${APPNAME}" dir=in action=allow enable=yes profile=private,domain program="$INSTDIR\${EXE}"'`,
+			`!define FW_DELETE 'advfirewall firewall delete rule name="${APPNAME}" dir=in'`,
+		}
+		if perMachine {
+			wants = append(wants, `nsExec::Exec 'netsh ${FW_ADD}'`)
+		} else {
+			wants = append(wants, `ExecShellWait "runas" "netsh" '${FW_ADD}' SW_HIDE`)
+		}
+		for _, w := range wants {
+			if !strings.Contains(s, w) {
+				t.Errorf("per machine %v: script lacks %s", perMachine, w)
+			}
+		}
+		// Removed on uninstall.
+		if i := strings.Index(s, `Section "Uninstall"`); i < 0 || !strings.Contains(s[i:], "FW_DELETE") {
+			t.Errorf("per machine %v: the uninstaller doesn't remove the rule", perMachine)
+		}
+	}
+	s, _ := Script(Options{Name: "A", ID: "a.b", Version: "1.0.0", Exe: `C:\b\A.exe`, Output: `C:\b\s.exe`, Firewall: true, FirewallPublic: true})
+	if !strings.Contains(s, "profile=any") {
+		t.Error("FirewallPublic didn't allow every profile")
+	}
+	if s, _ := Script(Options{Name: "A", ID: "a.b", Version: "1.0.0", Exe: `C:\b\A.exe`, Output: `C:\b\s.exe`}); strings.Contains(s, "netsh") {
+		t.Error("a firewall rule without Firewall")
+	}
+}
+
+func TestBuild_Firewall(t *testing.T) {
+	if _, err := findMakensis(); err != nil {
+		t.Skip(err)
+	}
+	for _, perMachine := range []bool{false, true} {
+		dir := t.TempDir()
+		exe := filepath.Join(dir, "App.exe")
+		os.WriteFile(exe, []byte("MZ"), 0o755)
+		out := filepath.Join(dir, "App-setup.exe")
+		if err := Build(Options{Name: "App", ID: "com.example.app", Version: "1.0.0", Exe: exe, Output: out, PerMachine: perMachine, Firewall: true}); err != nil {
+			t.Fatalf("per machine %v: %v", perMachine, err)
+		}
+	}
+}

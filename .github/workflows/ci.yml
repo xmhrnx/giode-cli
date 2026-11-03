@@ -63,6 +63,7 @@ jobs:
           sed -i 's/^# keep_alive = true.*/keep_alive = true/; s/^# permissions = .*/permissions = ["network", "camera"]/' demo/giode.toml
           # The app's own Java, compiled into the APK, and an attribute
           # on <application>.
+          sed -i 's/^\[app\]$/[app]\nsplash_color = "#0A0A0B"\nsplash_color_light = "#F4F4F6"/' demo/giode.toml
           sed -i 's/^\[android\]$/[android]\njava = ["java"]\nicon_background = "#0f172a"\nicon_monochrome = "assets\/icon.png"/' demo/giode.toml
           printf '\n[android.application_attributes]\nrequestLegacyExternalStorage = "true"\n' >> demo/giode.toml
           mkdir -p demo/java/org/giode/demo
@@ -138,6 +139,8 @@ jobs:
           [ios.plist]
           ITSAppUsesNonExemptEncryption = false
           TOML
+          perl -pi -e 's/^\[app\]$/[app]\nsplash_color = "#0A0A0B"\nsplash_color_light = "#F4F4F6"/' demo/giode.toml
+          cat demo/giode.toml
       - name: Build
         working-directory: ${{ runner.temp }}/demo
         run: giode build -x ios-sim macos
@@ -148,6 +151,7 @@ jobs:
           grep -q '"NSCameraUsageDescription" => "To attach photos."' plist.txt
           grep -q '"NSMicrophoneUsageDescription" => "To dictate."' plist.txt
           grep -q '"ITSAppUsesNonExemptEncryption" => false' plist.txt
+          grep -q '"UIColorName" => "GiodeLaunchBackground"' plist.txt
           test -d dist/macos/Demo.app
 
   # Builds, signs, installs and uninstalls the Windows installer on
