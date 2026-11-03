@@ -165,6 +165,13 @@ type Extras struct {
 	// AndroidValues is a res/values resource file added to Android
 	// apps: Firebase's google-services strings.
 	AndroidValues string
+	// SplashColor is the background ("#RRGGBB") shown before the first
+	// frame: Android's window background and Android 12+'s splash
+	// screen, and iOS's launch screen. SplashColorLight, when set, is
+	// used instead in light mode. Empty keeps white.
+	SplashColor, SplashColorLight string
+	// ShareExtension, when set, builds a share extension into iOS apps.
+	ShareExtension *ShareExtension
 }
 
 // Build builds and packages the Go package pkg as gogio would.

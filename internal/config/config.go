@@ -66,6 +66,13 @@ type App struct {
 	Build   int    `toml:"build"`
 	// Icon is a square PNG, at least 512x512 for the stores.
 	Icon string `toml:"icon"`
+	// SplashColor ("#RRGGBB") fills the screen on Android and iOS until
+	// the first frame: the window background and Android 12+'s splash
+	// screen (with the app's icon), and iOS's launch screen.
+	// SplashColorLight, when set, is used in light mode instead; then
+	// SplashColor is the dark mode one. Empty keeps white.
+	SplashColor      string `toml:"splash_color"`
+	SplashColorLight string `toml:"splash_color_light"`
 	// Package is the main Go package, "." by default.
 	Package string `toml:"package"`
 	// Schemes are URL schemes the app opens (myapp://...).
@@ -75,6 +82,12 @@ type App struct {
 	// https://example.com/app/*. giode links writes the files the site
 	// must serve to prove the app may.
 	Links []string `toml:"links"`
+	// ShareTarget offers the app in the system share sheet, for any
+	// files and text, which reach giode.Config.OnShareReceived. On
+	// Android it registers for ACTION_SEND and ACTION_SEND_MULTIPLE; on
+	// iOS it builds, signs and embeds a share extension that hands the
+	// items to the app through an App Group (ios.app_group).
+	ShareTarget bool `toml:"share_target"`
 	// Publisher is who makes the app, shown by installers and in
 	// Windows' list of installed apps; Description a one-line summary;
 	// Website the app's home page.
@@ -208,6 +221,14 @@ type IOS struct {
 	// entitlement, which the provisioning profile must allow. It also
 	// lets silent pushes wake the app (UIBackgroundModes).
 	Push string `toml:"push"`
+	// AppGroup is the App Group app.share_target's extension shares with
+	// the app, "group.<app.id>" by default. Both provisioning profiles
+	// must allow it.
+	AppGroup string `toml:"app_group"`
+	// ShareProfile is the provisioning profile signing the share
+	// extension (bundle ID <app.id>.share) in device builds with
+	// app.share_target; $GIODE_IOS_SHARE_PROFILE overrides it.
+	ShareProfile string `toml:"share_profile"`
 }
 
 // MacOS configures macOS app bundles.
@@ -314,6 +335,12 @@ type WindowsInstaller struct {
 	// DesktopShortcut adds a desktop shortcut as well as the Start menu
 	// one.
 	DesktopShortcut bool `toml:"desktop_shortcut"`
+	// Firewall adds an inbound Windows Firewall rule for the app on
+	// install (private and domain networks; FirewallPublic adds public
+	// ones) and removes it on uninstall, for apps other devices connect
+	// to. Per-user installs ask for administrator rights for this step.
+	Firewall       bool `toml:"firewall"`
+	FirewallPublic bool `toml:"firewall_public"`
 }
 
 // Update configures the giode update package for desktop builds.
@@ -442,6 +469,9 @@ func Load(path string) (*Config, error) {
 	if v := os.Getenv("GIODE_IOS_TEAM_ID"); v != "" {
 		c.IOS.TeamID = v
 	}
+	if v := os.Getenv("GIODE_IOS_SHARE_PROFILE"); v != "" {
+		c.IOS.ShareProfile = v
+	}
 	c.setDefaults()
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
@@ -488,6 +518,9 @@ var (
 )
 
 // Validate reports settings that would fail a build.
+// hexColorRE matches #RRGGBB.
+var hexColorRE = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+
 func (c *Config) Validate() error {
 	var errs []error
 	if c.App.Name == "" {
@@ -501,6 +534,17 @@ func (c *Config) Validate() error {
 	}
 	if c.App.Build < 1 {
 		errs = append(errs, fmt.Errorf("app.build must be at least 1"))
+	}
+	for _, sc := range []struct{ key, v string }{{"app.splash_color", c.App.SplashColor}, {"app.splash_color_light", c.App.SplashColorLight}} {
+		if sc.v != "" && !hexColorRE.MatchString(sc.v) {
+			errs = append(errs, fmt.Errorf("%s %q must be a colour like #0A0A0B", sc.key, sc.v))
+		}
+	}
+	if c.App.SplashColorLight != "" && c.App.SplashColor == "" {
+		errs = append(errs, errors.New("app.splash_color_light needs app.splash_color, the dark mode colour"))
+	}
+	if g := c.IOS.AppGroup; g != "" && (!strings.HasPrefix(g, "group.") || strings.ContainsAny(g, " /")) {
+		errs = append(errs, fmt.Errorf("ios.app_group %q must look like group.com.example.app", g))
 	}
 	errs = append(errs, c.validateContextActions()...)
 	errs = append(errs, c.validateFileTypes()...)

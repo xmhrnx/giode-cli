@@ -77,6 +77,9 @@ func (c *Config) IOSEntitlements() map[string]any {
 	if c.IOS.Push != "" {
 		ents["aps-environment"] = c.IOS.Push
 	}
+	if c.App.ShareTarget {
+		ents["com.apple.security.application-groups"] = []string{c.IOSAppGroup()}
+	}
 	return ents
 }
 

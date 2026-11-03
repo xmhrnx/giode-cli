@@ -47,6 +47,26 @@ const keepAliveService = `		<service android:name="org.giode.mobile.KeepAliveSer
 			android:foregroundServiceType="dataSync"
 			android:exported="false"/>`
 
+// shareActivity declares giode's share target (see
+// giode/internal/mobile/ShareActivity.java): any files and text.
+const shareActivity = `		<activity android:name="org.giode.mobile.ShareActivity"
+			android:exported="true"
+			android:excludeFromRecents="true"
+			android:noHistory="true"
+			android:taskAffinity=""
+			android:theme="@android:style/Theme.Translucent.NoTitleBar">
+			<intent-filter>
+				<action android:name="android.intent.action.SEND"/>
+				<category android:name="android.intent.category.DEFAULT"/>
+				<data android:mimeType="*/*"/>
+			</intent-filter>
+			<intent-filter>
+				<action android:name="android.intent.action.SEND_MULTIPLE"/>
+				<category android:name="android.intent.category.DEFAULT"/>
+				<data android:mimeType="*/*"/>
+			</intent-filter>
+		</activity>`
+
 // AndroidExtras returns the permissions, <manifest> XML and
 // <application> XML giode adds to the Android manifest.
 func (c *Config) AndroidExtras() (perms []string, manifest, application string) {
@@ -67,6 +87,9 @@ func (c *Config) AndroidExtras() (perms []string, manifest, application string) 
 	application = strings.TrimSpace(c.Android.Application)
 	if c.Android.KeepAlive {
 		application = strings.TrimSpace(keepAliveService + "\n" + application)
+	}
+	if c.App.ShareTarget {
+		application = strings.TrimSpace(shareActivity + "\n" + application)
 	}
 	return perms, strings.TrimSpace(c.Android.Manifest), application
 }
@@ -110,11 +133,18 @@ var usageKeys = map[string]string{
 // XML key/value pairs.
 func (c *Config) IOSPlist() (string, error) {
 	raw := c.IOS.Plist
-	if c.IOS.Push != "" {
-		raw = make(map[string]any, len(c.IOS.Plist)+1)
+	if c.IOS.Push != "" || c.App.ShareTarget {
+		raw = make(map[string]any, len(c.IOS.Plist)+3)
 		for k, v := range c.IOS.Plist {
 			raw[k] = v
 		}
+	}
+	if c.App.ShareTarget {
+		// Where giode looks for what the share extension received.
+		raw["GiodeAppGroup"] = c.IOSAppGroup()
+		raw["GiodeShareScheme"] = c.IOSShareScheme()
+	}
+	if c.IOS.Push != "" {
 		modes := []string{"remote-notification"}
 		if old, ok := raw["UIBackgroundModes"].([]any); ok {
 			for _, m := range old {
@@ -126,6 +156,21 @@ func (c *Config) IOSPlist() (string, error) {
 		raw["UIBackgroundModes"] = modes
 	}
 	return infoPlist(c.IOS.Usage, raw)
+}
+
+// IOSAppGroup is the App Group app.share_target's extension shares
+// with the app.
+func (c *Config) IOSAppGroup() string {
+	if c.IOS.AppGroup != "" {
+		return c.IOS.AppGroup
+	}
+	return "group." + c.App.ID
+}
+
+// IOSShareScheme is the URL scheme app.share_target's extension opens
+// the app with.
+func (c *Config) IOSShareScheme() string {
+	return "giode-share-" + c.App.ID
 }
 
 // MacOSPlist returns the Info.plist entries giode adds for macOS.

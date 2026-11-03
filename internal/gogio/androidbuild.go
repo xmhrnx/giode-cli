@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -62,24 +63,61 @@ type manifestData struct {
 	ActivityXML string
 }
 
-const (
-	themes = `<?xml version="1.0" encoding="utf-8"?>
+// androidThemes returns the res files of the app's theme: values,
+// values-v21 and, with a splash colour, the colour resources and
+// Android 12's splash screen. icon tells whether there's a launcher
+// icon to show on that splash.
+func androidThemes(icon bool) map[string]string {
+	bg := "@android:color/white"
+	files := map[string]string{}
+	if extras.SplashColor != "" {
+		bg = "@color/giode_splash"
+		light := extras.SplashColor
+		if extras.SplashColorLight != "" {
+			light = extras.SplashColorLight
+		}
+		colors := func(c string) string {
+			return `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<color name="giode_splash">` + c + `</color>
+</resources>`
+		}
+		files["values/giode_splash.xml"] = colors(light)
+		files["values-night/giode_splash.xml"] = colors(extras.SplashColor)
+	}
+	files["values/themes.xml"] = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
 	<style name="Theme.GioApp" parent="android:style/Theme.NoTitleBar">
-		<item name="android:windowBackground">@android:color/white</item>
+		<item name="android:windowBackground">` + bg + `</item>
 	</style>
 </resources>`
-	themesV21 = `<?xml version="1.0" encoding="utf-8"?>
-<resources>
-	<style name="Theme.GioApp" parent="android:style/Theme.NoTitleBar">
-		<item name="android:windowBackground">@android:color/white</item>
+	v21 := `
+		<item name="android:windowBackground">` + bg + `</item>
 
 		<item name="android:windowDrawsSystemBarBackgrounds">true</item>
 		<item name="android:navigationBarColor">#40000000</item>
-		<item name="android:statusBarColor">#40000000</item>
+		<item name="android:statusBarColor">#40000000</item>`
+	files["values-v21/themes.xml"] = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<style name="Theme.GioApp" parent="android:style/Theme.NoTitleBar">` + v21 + `
 	</style>
 </resources>`
-)
+	if extras.SplashColor != "" {
+		// Android 12 and later draw their own splash screen, from these.
+		splash := `
+		<item name="android:windowSplashScreenBackground">@color/giode_splash</item>`
+		if icon {
+			splash += `
+		<item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>`
+		}
+		files["values-v31/themes.xml"] = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<style name="Theme.GioApp" parent="android:style/Theme.NoTitleBar">` + v21 + splash + `
+	</style>
+</resources>`
+	}
+	return files
+}
 
 func init() {
 	if runtime.GOOS == "windows" {
@@ -337,10 +375,10 @@ func archiveAndroid(tmpDir string, bi *buildInfo, perms []string) (err error) {
 	aarw := newZipWriter(aar)
 	defer aarw.Close()
 	aarw.Create("R.txt")
-	themesXML := aarw.Create("res/values/themes.xml")
-	themesXML.Write([]byte(themes))
-	themesXML21 := aarw.Create("res/values-v21/themes.xml")
-	themesXML21.Write([]byte(themesV21))
+	for _, name := range sortedKeys(androidThemes(false)) {
+		w := aarw.Create("res/" + name)
+		w.Write([]byte(androidThemes(false)[name]))
+	}
 	permissions, features := getPermissions(perms)
 	permissions = addPermissions(permissions, extras.AndroidPermissions)
 	// Disable input emulation on ChromeOS.
@@ -460,13 +498,14 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, li
 		}
 		iconSnip = `android:icon="@mipmap/ic_launcher"`
 	}
-	err = os.WriteFile(filepath.Join(valDir, "themes.xml"), []byte(themes), 0o660)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(filepath.Join(v21Dir, "themes.xml"), []byte(themesV21), 0o660)
-	if err != nil {
-		return err
+	for name, body := range androidThemes(iconSnip != "") {
+		p := filepath.Join(resDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(p, []byte(body), 0o660); err != nil {
+			return err
+		}
 	}
 	if extras.AndroidValues != "" {
 		if err := os.WriteFile(filepath.Join(valDir, "giode_values.xml"), []byte(extras.AndroidValues), 0o660); err != nil {
@@ -1276,4 +1315,14 @@ func splitSymbols(tcRoot, lib, sym string) error {
 	}
 	_, err := runCmd(exec.Command(stripTool, "--strip-all", lib))
 	return err
+}
+
+// sortedKeys returns m's keys in order, for reproducible archives.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
