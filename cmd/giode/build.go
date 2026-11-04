@@ -457,7 +457,7 @@ func buildWindowsInstaller(c *config.Config, o buildOpts) (string, error) {
 		opts.FileTypes = append(opts.FileTypes, installer.FileType{ProgID: ft.ProgID, Name: ft.Name, Extensions: ft.Extensions, Icon: ft.Icon})
 	}
 	for _, v := range c.WindowsVerbs() {
-		opts.ContextMenu = append(opts.ContextMenu, installer.Verb{Key: v.Key, Label: v.Label, ID: v.ID, Arg: v.Arg})
+		opts.ContextMenu = append(opts.ContextMenu, installer.Verb{Key: v.Key, Label: v.Label, ID: v.ID, Arg: v.Arg, CLSID: v.CLSID})
 	}
 	if err := installer.Build(opts); err != nil {
 		return "", err

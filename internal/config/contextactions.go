@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -69,9 +70,23 @@ func (c *Config) ContextActionPrefix() string {
 
 // WindowsVerb is an Explorer context menu entry: a key under
 // Software\Classes, its label, and the action and path argument its
-// command passes.
+// command passes. CLSID, for actions on files and folders, is the COM
+// class the giode library registers to take the whole selection in one
+// launch (a DropTarget verb): Explorer would otherwise start the app
+// once per selected item.
 type WindowsVerb struct {
-	Key, Label, ID, Arg string
+	Key, Label, ID, Arg, CLSID string
+}
+
+// ContextActionCLSID is the giode library's giode.ContextActionCLSID:
+// a name-based UUID (version 5) of "giode-context-action:" + prefix +
+// "." + id. The two must agree.
+func ContextActionCLSID(prefix, id string) string {
+	h := sha1.Sum([]byte("giode-context-action:" + prefix + "." + id))
+	b := h[:16]
+	b[6] = b[6]&0x0f | 0x50
+	b[8] = b[8]&0x3f | 0x80
+	return strings.ToUpper(fmt.Sprintf("{%x-%x-%x-%x-%x}", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]))
 }
 
 // WindowsVerbs returns the Explorer entries for the context actions.
@@ -80,7 +95,11 @@ func (c *Config) WindowsVerbs() []WindowsVerb {
 	prefix := c.ContextActionPrefix()
 	for _, a := range c.ContextActions {
 		add := func(parent, arg string) {
-			out = append(out, WindowsVerb{Key: parent + `\shell\` + prefix + "." + a.ID, Label: a.Label, ID: a.ID, Arg: arg})
+			v := WindowsVerb{Key: parent + `\shell\` + prefix + "." + a.ID, Label: a.Label, ID: a.ID, Arg: arg}
+			if arg == "%1" {
+				v.CLSID = ContextActionCLSID(prefix, a.ID)
+			}
+			out = append(out, v)
 		}
 		if a.OnFiles() {
 			if len(a.Extensions) == 0 {

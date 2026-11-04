@@ -248,6 +248,11 @@ folders = true
 background = true             # the empty space of an open folder
 ```
 
+On Windows the setup program registers actions on files and folders as drop targets, so
+Explorer hands every selected file to the app in one launch (one `OnContextAction` with
+all the paths) instead of starting it once per file. The app must be built with a Giode
+that serves them: commit dac6195 on main, or the first release made after it.
+
 **Android permissions** take gogio's short names (`network`, `networkstate`,
 `bluetooth`, `camera`, `storage`, `wakelock`, `microphone`), giode's (`notifications`,
 `foreground_service`, `vibrate`, `biometric`, `location`, `coarse_location`,

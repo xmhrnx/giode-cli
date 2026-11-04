@@ -43,6 +43,17 @@ func TestContextActions(t *testing.T) {
 		t.Errorf("verbs:\n%s\nwant\n%s", strings.Join(keys, "\n"), strings.Join(want, "\n"))
 	}
 
+	for _, v := range verbs {
+		if (v.Arg == "%1") != (v.CLSID != "") {
+			t.Errorf("%s: CLSID %q; want one exactly for file and folder verbs", v.Key, v.CLSID)
+		}
+	}
+	// The giode library derives the same ID (giode's
+	// TestContextActionCLSID): keep the two in step.
+	if got, want := ContextActionCLSID("com-example-send", "send"), "{7D2BADB1-E06C-5098-B45A-CB79C5D1A596}"; got != want {
+		t.Errorf("CLSID %s, want %s", got, want)
+	}
+
 	flag := c.ContextActionsLdflag()
 	const prefix = "-X github.com/xmhrnx/giode.buildContextActions="
 	if !strings.HasPrefix(flag, prefix) || strings.ContainsAny(flag[len(prefix):], " '\"") {

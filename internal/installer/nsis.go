@@ -73,6 +73,11 @@ type FileType struct {
 // command passes to the app.
 type Verb struct {
 	Key, Label, ID, Arg string
+	// CLSID, when set, makes it a DropTarget verb for that COM class,
+	// served by the app (the giode library registers it): Explorer
+	// hands the whole selection to one launch instead of starting the
+	// app once per item.
+	CLSID string
 }
 
 // Build writes a setup program with makensis: a wizard (welcome,
@@ -366,6 +371,11 @@ Section "Install"
 	WriteRegStr ${REGROOT} {{q (printf "Software\\Classes\\%s" .Key)}} "MUIVerb" {{q .Label}}
 	WriteRegStr ${REGROOT} {{q (printf "Software\\Classes\\%s" .Key)}} "Icon" "$INSTDIR\${EXE}"
 	WriteRegStr ${REGROOT} {{q (printf "Software\\Classes\\%s\\command" .Key)}} "" '"$INSTDIR\${EXE}" --giode-action={{.ID}} "{{.Arg}}"'
+{{- if .CLSID}}
+	WriteRegStr ${REGROOT} {{q (printf "Software\\Classes\\%s" .Key)}} "MultiSelectModel" "Player"
+	WriteRegStr ${REGROOT} {{q (printf "Software\\Classes\\%s\\DropTarget" .Key)}} "CLSID" {{q .CLSID}}
+	WriteRegStr ${REGROOT} {{q (printf "Software\\Classes\\CLSID\\%s\\LocalServer32" .CLSID)}} "" '"$INSTDIR\${EXE}"'
+{{- end}}
 {{- end}}
 SectionEnd
 
@@ -402,6 +412,9 @@ Section "Uninstall"
 	DeleteRegKey ${REGROOT} "${UNINST_KEY}"
 {{- range .ContextMenu}}
 	DeleteRegKey ${REGROOT} {{q (printf "Software\\Classes\\%s" .Key)}}
+{{- if .CLSID}}
+	DeleteRegKey ${REGROOT} {{q (printf "Software\\Classes\\CLSID\\%s" .CLSID)}}
+{{- end}}
 {{- end}}
 SectionEnd
 `))

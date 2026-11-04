@@ -84,7 +84,7 @@ func TestBuild(t *testing.T) {
 
 func TestScript_ContextMenu(t *testing.T) {
 	o := Options{Name: "App", ID: "com.example.app", Version: "1.0.0", Exe: `C:\b\App.exe`, Output: `C:\b\setup.exe`,
-		ContextMenu: []Verb{{Key: `*\shell\com-example-app.ask`, Label: "Ask App", ID: "ask", Arg: "%1"}}}
+		ContextMenu: []Verb{{Key: `*\shell\com-example-app.ask`, Label: "Ask App", ID: "ask", Arg: "%1", CLSID: "{11111111-2222-5333-8444-555555555555}"}}}
 	s, err := Script(o)
 	if err != nil {
 		t.Fatal(err)
@@ -93,6 +93,10 @@ func TestScript_ContextMenu(t *testing.T) {
 		`WriteRegStr ${REGROOT} "Software\Classes\*\shell\com-example-app.ask" "MUIVerb" "Ask App"`,
 		`WriteRegStr ${REGROOT} "Software\Classes\*\shell\com-example-app.ask\command" "" '"$INSTDIR\${EXE}" --giode-action=ask "%1"'`,
 		`DeleteRegKey ${REGROOT} "Software\Classes\*\shell\com-example-app.ask"`,
+		`WriteRegStr ${REGROOT} "Software\Classes\*\shell\com-example-app.ask" "MultiSelectModel" "Player"`,
+		`WriteRegStr ${REGROOT} "Software\Classes\*\shell\com-example-app.ask\DropTarget" "CLSID" "{11111111-2222-5333-8444-555555555555}"`,
+		`WriteRegStr ${REGROOT} "Software\Classes\CLSID\{11111111-2222-5333-8444-555555555555}\LocalServer32" "" '"$INSTDIR\${EXE}"'`,
+		`DeleteRegKey ${REGROOT} "Software\Classes\CLSID\{11111111-2222-5333-8444-555555555555}"`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script lacks %s", want)
@@ -115,8 +119,10 @@ func TestBuild_ContextMenuUnderWine(t *testing.T) {
 	os.WriteFile(exe, []byte("MZ"), 0o755)
 	out := filepath.Join(dir, "setup.exe")
 	key := `HKCU\Software\Classes\*\shell\com-example-ctxapp.ask`
+	const clsid = "{7D2BADB1-E06C-5098-B45A-CB79C5D1A596}"
+	clsidKey := `HKCU\Software\Classes\CLSID\` + clsid
 	o := Options{Name: "CtxApp", ID: "com.example.ctxapp", Version: "1.0.0", Publisher: "Acme", Exe: exe, Output: out,
-		ContextMenu: []Verb{{Key: `*\shell\com-example-ctxapp.ask`, Label: "Ask CtxApp", ID: "ask", Arg: "%1"}}}
+		ContextMenu: []Verb{{Key: `*\shell\com-example-ctxapp.ask`, Label: "Ask CtxApp", ID: "ask", Arg: "%1", CLSID: clsid}}}
 	if err := Build(o); err != nil {
 		t.Fatal(err)
 	}
@@ -134,12 +140,21 @@ func TestBuild_ContextMenuUnderWine(t *testing.T) {
 	if got := run("reg", "query", key, "/v", "MUIVerb"); !strings.Contains(got, "Ask CtxApp") {
 		t.Errorf("label after install:\n%s", got)
 	}
+	if got := run("reg", "query", key+`\DropTarget`, "/v", "CLSID"); !strings.Contains(got, clsid) {
+		t.Errorf("DropTarget after install:\n%s", got)
+	}
+	if got := run("reg", "query", clsidKey+`\LocalServer32`); !strings.Contains(got, `CtxApp.exe`) {
+		t.Errorf("COM server after install:\n%s", got)
+	}
 	// Uninstall: the uninstaller re-runs itself from a temp copy, so
 	// wait for the key to go.
 	uninst := strings.TrimSpace(run("cmd", "/c", `echo %LOCALAPPDATA%`)) + `\Programs\CtxApp\Uninstall.exe`
 	run(uninst, "/S")
 	for i := 0; i < 50; i++ {
 		if got := run("reg", "query", key); !strings.Contains(got, "MUIVerb") {
+			if got := run("reg", "query", clsidKey+`\LocalServer32`); strings.Contains(got, "CtxApp.exe") {
+				t.Error("COM class key left after uninstalling")
+			}
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
