@@ -151,7 +151,8 @@ func cmdRelease(args []string) error {
 		return err
 	}
 	f := feed{Version: c.App.Version, Notes: strings.TrimSpace(*notes), Date: time.Now().UTC().Format(time.RFC3339), Assets: map[string]asset{}}
-	for _, t := range expandTargets(targets) {
+	ts, _ := expandTargets(c, targets)
+	for _, t := range ts {
 		fmt.Printf("Building %s…\n", t)
 		start := time.Now()
 		built, err := buildTarget(c, t, buildOpts{release: true})

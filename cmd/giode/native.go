@@ -15,6 +15,7 @@ import (
 
 	"github.com/xmhrnx/giode-cli/internal/config"
 	"github.com/xmhrnx/giode-cli/internal/native"
+	"github.com/xmhrnx/giode-cli/internal/progress"
 )
 
 // nativeLibs returns the shared libraries bin loads that [native]
@@ -36,7 +37,7 @@ func nativeLibs(c *config.Config, goos, bin string) ([]native.Lib, error) {
 			return nil, err
 		}
 		if verbose {
-			fmt.Fprintf(os.Stderr, "  ANGLE for app.renderer = \"opengl\": %s\n", filepath.Dir(found[0]))
+			progress.Logf("ANGLE for app.renderer = \"opengl\": %s", filepath.Dir(found[0]))
 		}
 		libs = append(libs, found...)
 		// Its own dependencies (MinGW's runtime) are usually next to it.
@@ -51,12 +52,12 @@ func nativeLibs(c *config.Config, goos, bin string) ([]native.Lib, error) {
 		if section == "" {
 			section = "native.linux"
 		}
-		fmt.Fprintf(os.Stderr, "  warning: %s needs %s, not found in %s.search; the package won't run where they're missing\n",
+		progress.Logf("warning: %s needs %s, not found in %s.search; the package won't run where they're missing",
 			filepath.Base(bin), strings.Join(r.Missing, ", "), section)
 	}
 	if verbose {
 		for _, l := range r.Libs {
-			fmt.Fprintf(os.Stderr, "  bundling %s (%s)\n", l.Name, l.Path)
+			progress.Logf("bundling %s (%s)", l.Name, l.Path)
 		}
 	}
 	return r.Libs, nil

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/xmhrnx/giode-cli/internal/progress"
 )
 
 // bundletool builds Android App Bundles. The SDK doesn't ship it, so
@@ -32,7 +34,7 @@ func findBundletool(buildtools string) (string, error) {
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	}
-	fmt.Fprintf(os.Stderr, "Downloading bundletool %s (once, for app bundles)…\n", bundletoolVersion)
+	progress.Logf("downloading bundletool %s (once, for app bundles)", bundletoolVersion)
 	if err := download(bundletoolURL, path, bundletoolSHA256); err != nil {
 		return "", fmt.Errorf("bundletool isn't in %s and couldn't be downloaded: %w; download it from https://github.com/google/bundletool/releases into that folder", buildtools, err)
 	}

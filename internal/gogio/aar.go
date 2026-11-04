@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/xmhrnx/giode-cli/internal/maven"
+	"github.com/xmhrnx/giode-cli/internal/progress"
 )
 
 // androidLibs are the AARs and JARs to build in (Options.AndroidLibs);
@@ -115,9 +116,11 @@ func resolveLibs(deps []string) ([]string, error) {
 	}
 	r := &maven.Resolver{Repos: repos, Cache: cache}
 	if *printCommands {
-		r.Log = func(s string) { fmt.Fprintln(os.Stderr, "maven:", s) }
+		r.Log = func(s string) { progress.Logf("maven: %s", s) }
 	}
+	done := progress.Begin("Resolving Android libraries")
 	arts, err := r.Resolve(roots)
+	done(err)
 	if err != nil {
 		return nil, err
 	}

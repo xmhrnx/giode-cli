@@ -8,6 +8,7 @@ import (
 
 	"github.com/xmhrnx/giode-cli/internal/config"
 	"github.com/xmhrnx/giode-cli/internal/licenses"
+	"github.com/xmhrnx/giode-cli/internal/progress"
 )
 
 const licensesUsage = `
@@ -48,13 +49,15 @@ func cmdLicenses(args []string) error {
 
 // writeLicenses collects the app's licenses into path.
 func writeLicenses(c *config.Config, path string) (int, error) {
+	done := progress.Begin("Collecting licenses")
 	ls, err := licenses.Collect(c.Dir, pkgPath(c), c.App.Tags)
+	done(err)
 	if err != nil {
 		return 0, err
 	}
 	for _, l := range ls {
 		if l.Text == "" {
-			fmt.Fprintf(os.Stderr, "  note: %s has no license file\n", l.Module)
+			progress.Logf("%s has no license file", l.Module)
 		}
 	}
 	b, err := json.MarshalIndent(ls, "", "  ")

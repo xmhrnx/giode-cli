@@ -9,7 +9,7 @@ import (
 // one: it lasts as long as the app does, so it reports its build and
 // install steps instead.
 var timedCommands = map[string]bool{
-	"build": true, "release": true, "upgrade": true, "self-update": true, "licenses": true, "clean": true,
+	"release": true, "upgrade": true, "self-update": true, "licenses": true, "clean": true,
 }
 
 // elapsed formats a duration for progress lines: 850ms, 12.3s, 2m05s.

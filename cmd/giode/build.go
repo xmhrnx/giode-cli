@@ -13,13 +13,13 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	_ "image/jpeg"
 
 	"github.com/xmhrnx/giode-cli/internal/config"
 	"github.com/xmhrnx/giode-cli/internal/gogio"
 	"github.com/xmhrnx/giode-cli/internal/installer"
+	"github.com/xmhrnx/giode-cli/internal/progress"
 	"github.com/xmhrnx/giode-cli/internal/pwa"
 	"github.com/xmhrnx/giode-cli/internal/sign"
 )
@@ -51,7 +51,9 @@ no target it builds for this computer's platform, like desktop:
 	          without it (Linux only)
 	web       a WebAssembly site (dist/web)
 	desktop   this computer's platform
-	all       every target this computer can build
+	all       every target this computer can build for app.platforms (all
+	          platforms when empty), skipping, with the reason, those it lacks
+	          the tools or settings for
 
 Android and iOS builds add what giode.toml asks for to the manifest and
 Info.plist: permissions, giode's background service (android.keep_alive),
@@ -65,6 +67,11 @@ always signed with ios.profile. Without -release, Android uses the debug
 key and the rest are unsigned.
 
 Short names work too: apk, bundle, win, mac, sim, installer.
+
+On a terminal, build shows each step as it runs - compiling Go for each
+architecture, linking resources, signing, packing - with a spinner and
+its time, then a summary of what it made. In CI logs and pipes it prints
+a line per finished step; -x prints the commands instead.
 
 Example:
 
@@ -107,19 +114,32 @@ func cmdBuild(args []string) error {
 	if o.output != "" && len(targets) > 1 {
 		return errors.New("-o works with one target only")
 	}
-	targets = expandTargets(targets)
+	targets, skipped := expandTargets(c, targets)
+	if len(targets) == 0 {
+		return errors.New("nothing to build on this computer: " + strings.Join(skipped, "; "))
+	}
+	r := progress.Start(progress.Options{Plain: verbose})
+	defer r.Stop()
+	version := c.App.Version
+	if c.App.Build > 0 {
+		version += fmt.Sprintf(" (%d)", c.App.Build)
+	}
+	r.Header(c.App.Name, version, targets)
+	for _, s := range skipped {
+		progress.Logf("skipped %s", s)
+	}
 	var failed []string
-	for _, t := range targets {
-		fmt.Printf("Building %s…\n", t)
-		start := time.Now()
+	for i, t := range targets {
+		r.Target(t, i+1, len(targets))
 		out, err := buildTarget(c, t, o)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "giode build %s: %v%s\n", t, err, after(start))
 			failed = append(failed, t)
+			r.TargetDone("", err)
 			continue
 		}
-		fmt.Printf("  %s (%s)\n", relPath(out), since(start))
+		r.TargetDone(relPath(out), nil)
 	}
+	r.Summary()
 	if len(failed) > 0 {
 		return fmt.Errorf("failed: %s", strings.Join(failed, ", "))
 	}
@@ -173,35 +193,137 @@ func hostTarget() string {
 	}
 }
 
-func expandTargets(ts []string) []string {
-	var out []string
+// expandTargets resolves aliases, desktop and all. all is every target
+// this computer can build for the app's platforms (app.platforms, all
+// of them when empty); the targets it leaves out come back with why.
+func expandTargets(c *config.Config, ts []string) (out, skipped []string) {
 	for _, t := range ts {
 		switch t = canonical(t); t {
 		case "desktop":
 			out = append(out, hostTarget())
 		case "all":
-			out = append(out, "web", "windows")
-			if _, err := exec.LookPath("makensis"); err == nil {
-				out = append(out, "windows-installer")
-			}
-			if runtime.GOOS == "linux" {
-				out = append(out, "linux")
-			}
-			if runtime.GOOS == "darwin" {
-				out = append(out, "macos", "ios-sim")
-			}
-			if androidHome() != "" {
-				out = append(out, "android")
-			}
+			all, why := buildableTargets(c)
+			out = append(out, all...)
+			skipped = append(skipped, groupSkipped(why)...)
 		default:
 			out = append(out, t)
 		}
 	}
+	seen := map[string]bool{}
+	uniq := out[:0]
+	for _, t := range out {
+		if !seen[t] {
+			seen[t] = true
+			uniq = append(uniq, t)
+		}
+	}
+	return uniq, skipped
+}
+
+// groupSkipped turns "android (no SDK)", "aab (no SDK)" into
+// "android, aab: no SDK".
+func groupSkipped(why []string) []string {
+	var reasons []string
+	byReason := map[string][]string{}
+	for _, w := range why {
+		t, reason, _ := strings.Cut(w, " (")
+		reason = strings.TrimSuffix(reason, ")")
+		if _, ok := byReason[reason]; !ok {
+			reasons = append(reasons, reason)
+		}
+		byReason[reason] = append(byReason[reason], t)
+	}
+	out := make([]string, len(reasons))
+	for i, r := range reasons {
+		out[i] = strings.Join(byReason[r], ", ") + ": " + r
+	}
 	return out
 }
 
+// targetPlatform is the app.platforms entry a target builds for.
+func targetPlatform(t string) string {
+	switch t {
+	case "android", "aab":
+		return "android"
+	case "ios", "ios-sim":
+		return "ios"
+	case "macos", "dmg":
+		return "macos"
+	case "windows", "windows-installer", "msix", "winget":
+		return "windows"
+	case "linux", "deb", "rpm", "appimage", "flatpak":
+		return "linux"
+	}
+	return t
+}
+
+// buildableTargets are the targets this computer has the tools for,
+// and the reasons for the ones it hasn't.
+func buildableTargets(c *config.Config) (targets, skipped []string) {
+	has := func(tool string) bool { _, err := exec.LookPath(tool); return err == nil }
+	add := func(t string, ok bool, why string) {
+		if len(c.App.Platforms) > 0 && !contains(c.App.Platforms, targetPlatform(t)) {
+			return
+		}
+		if ok {
+			targets = append(targets, t)
+		} else {
+			skipped = append(skipped, t+" ("+why+")")
+		}
+	}
+	darwin, linux := runtime.GOOS == "darwin", runtime.GOOS == "linux"
+	android := androidHome() != ""
+	add("android", android, "no Android SDK; see giode doctor")
+	add("aab", android, "no Android SDK; see giode doctor")
+	add("ios-sim", darwin, "needs macOS")
+	add("ios", darwin && c.IOS.Profile != "", map[bool]string{true: "set ios.profile to sign device builds", false: "needs macOS"}[darwin])
+	add("macos", darwin, "needs macOS")
+	add("dmg", darwin, "needs macOS")
+	add("windows", true, "")
+	nsis := has("makensis")
+	add("windows-installer", nsis, "needs NSIS (makensis)")
+	switch {
+	case !nsis:
+		add("winget", false, "needs NSIS (makensis)")
+	case c.Windows.Winget.InstallerURL == "":
+		add("winget", false, "set windows.winget.installer_url")
+	default:
+		add("winget", true, "")
+	}
+	add("msix", c.Windows.MSIX.Publisher != "", "set windows.msix.publisher")
+	add("linux", linux, "needs Linux")
+	add("deb", linux, "needs Linux")
+	add("rpm", linux, "needs Linux")
+	add("appimage", linux && has("appimagetool"), map[bool]string{true: "needs appimagetool", false: "needs Linux"}[linux])
+	add("flatpak", linux && has("flatpak-builder"), map[bool]string{true: "needs flatpak-builder", false: "needs Linux"}[linux])
+	add("web", true, "")
+	return targets, skipped
+}
+
+// built remembers this run's outputs, so packages reuse the program a
+// target before them built (windows for its installer, msix and
+// winget; linux for deb and rpm; macos for dmg).
+var builtOutputs = map[string]string{}
+
 // buildTarget builds one target and returns the output path.
 func buildTarget(c *config.Config, target string, o buildOpts) (string, error) {
+	key := fmt.Sprintf("%s|%s|%t|%s", c.Dir, target, o.release, o.arch)
+	if o.output == "" && !o.work && len(o.args) == 0 {
+		if out, ok := builtOutputs[key]; ok {
+			if _, err := os.Stat(out); err == nil {
+				return out, nil
+			}
+		}
+		out, err := buildTargetUncached(c, target, o)
+		if err == nil {
+			builtOutputs[key] = out
+		}
+		return out, err
+	}
+	return buildTargetUncached(c, target, o)
+}
+
+func buildTargetUncached(c *config.Config, target string, o buildOpts) (string, error) {
 	if c.App.Licenses != "" && !licensesWritten[c.Dir] {
 		licensesWritten[c.Dir] = true
 		if _, err := writeLicenses(c, c.Path(c.App.Licenses)); err != nil {
@@ -265,7 +387,7 @@ func buildTarget(c *config.Config, target string, o buildOpts) (string, error) {
 		if err := zipTree(symbols, zip); err != nil {
 			return "", fmt.Errorf("native debug symbols: %w", err)
 		}
-		fmt.Printf("  %s (upload to the Play Console with the bundle)\n", relPath(zip))
+		progress.Logf("native debug symbols: %s (upload to the Play Console with the bundle)", relPath(zip))
 	}
 	if target == "web" && (c.Web.PWA == nil || *c.Web.PWA) {
 		err := pwa.Make(pwa.App{
@@ -293,14 +415,16 @@ func buildTarget(c *config.Config, target string, o buildOpts) (string, error) {
 // windows.signing is set up, and says so when it isn't.
 func signWindows(c *config.Config, file string) error {
 	if !c.Windows.Signing.Configured() {
-		fmt.Fprintf(os.Stderr, "  note: %s is unsigned; set windows.signing in giode.toml so Windows doesn't warn about it\n", filepath.Base(file))
+		progress.Logf("%s is unsigned; set windows.signing in giode.toml so Windows doesn't warn about it", filepath.Base(file))
 		return nil
 	}
 	sign.Verbose = verbose
 	if err := sign.Windows(c, file, c.App.Name); err != nil {
 		return fmt.Errorf("signing %s: %w", filepath.Base(file), err)
 	}
-	fmt.Printf("  signed %s\n", filepath.Base(file))
+	if !progress.Running() {
+		fmt.Printf("  signed %s\n", filepath.Base(file))
+	}
 	return nil
 }
 
@@ -483,7 +607,7 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 			case c.MacOS.Identity != "":
 				g.SignKey = c.MacOS.Identity
 			default:
-				fmt.Fprintln(os.Stderr, "  note: the app is unsigned; set macos.identity in giode.toml so Gatekeeper lets it open")
+				progress.Logf("the app is unsigned; set macos.identity in giode.toml so Gatekeeper lets it open")
 			}
 			if c.MacOS.NotaryID != "" {
 				if g.SignKey == "" {
@@ -545,7 +669,7 @@ func checkIcon(path string) error {
 		return fmt.Errorf("app.icon %s is %dx%d; it must be square", path, cfg.Width, cfg.Height)
 	}
 	if cfg.Width < 512 {
-		fmt.Fprintf(os.Stderr, "giode: app.icon %s is %dx%d; stores want at least 512x512 (1024x1024 for the App Store)\n", path, cfg.Width, cfg.Height)
+		progress.Logf("app.icon %s is %dx%d; stores want at least 512x512 (1024x1024 for the App Store)", path, cfg.Width, cfg.Height)
 	}
 	return nil
 }

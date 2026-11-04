@@ -192,3 +192,27 @@ func TestMoveGiodeImports(t *testing.T) {
 		t.Errorf("got:\n%s", b)
 	}
 }
+
+func TestBuildableTargets(t *testing.T) {
+	c := &config.Config{App: config.App{Platforms: []string{"web", "windows"}}}
+	targets, skipped := buildableTargets(c)
+	for _, tg := range targets {
+		if p := targetPlatform(tg); p != "web" && p != "windows" {
+			t.Errorf("%s isn't for app.platforms", tg)
+		}
+	}
+	if !contains(targets, "web") || !contains(targets, "windows") {
+		t.Errorf("targets = %v", targets)
+	}
+	if !contains(skipped, "msix (set windows.msix.publisher)") {
+		t.Errorf("skipped = %v", skipped)
+	}
+	got := groupSkipped([]string{"android (no SDK)", "aab (no SDK)", "ios (needs macOS)"})
+	if len(got) != 2 || got[0] != "android, aab: no SDK" || got[1] != "ios: needs macOS" {
+		t.Errorf("groupSkipped = %v", got)
+	}
+	ts, _ := expandTargets(c, []string{"web", "all", "wasm"})
+	if ts[0] != "web" || strings.Count(strings.Join(ts, ","), "web") != 1 {
+		t.Errorf("expandTargets = %v", ts)
+	}
+}

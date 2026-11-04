@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/progress"
 )
 
 // Verbose prints the signing commands, with the password hidden.
@@ -118,7 +119,9 @@ func run(cmd *exec.Cmd, secret string) error {
 	if Verbose {
 		fmt.Fprintln(os.Stderr, "+", line)
 	}
+	done := progress.Command(cmd)
 	out, err := cmd.CombinedOutput()
+	done(err)
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		if secret != "" {
