@@ -2,6 +2,7 @@ package gogio
 
 import (
 	"archive/zip"
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +27,21 @@ func writeZip(t *testing.T, path string, files map[string]string) {
 		t.Fatal(err)
 	}
 	f.Close()
+}
+
+// zipBytes is a zip (a jar) holding files, as a string to put in another.
+func zipBytes(t *testing.T, files map[string]string) string {
+	t.Helper()
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	for name, content := range files {
+		e, _ := w.Create(name)
+		e.Write([]byte(content))
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
 }
 
 func zipNames(t *testing.T, path string) map[string]bool {
@@ -193,8 +209,8 @@ func TestExeAndroidLibs(t *testing.T) {
 	aar := filepath.Join(libDir, "lib.aar")
 	writeZip(t, aar, map[string]string{
 		"AndroidManifest.xml":        `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.lib"><uses-permission android:name="android.permission.VIBRATE"/><application><activity android:name="com.example.lib.Screen"/></application></manifest>`,
-		"classes.jar":                "jar",
-		"libs/extra.jar":             "jar",
+		"classes.jar":                zipBytes(t, map[string]string{"com/example/lib/Screen.class": "x"}),
+		"libs/extra.jar":             zipBytes(t, map[string]string{"com/example/extra/Util.class": "x"}),
 		"res/values/strings.xml":     `<resources><string name="hello">Hi</string></resources>`,
 		"jni/arm64-v8a/libnative.so": "so",
 		"jni/x86/libnative.so":       "so",
@@ -236,9 +252,17 @@ func TestExeAndroidLibs(t *testing.T) {
 			d8 = line
 		}
 	}
-	for _, w := range []string{"classes.jar", "extra.jar", "plain.jar", "GioView.class", filepath.Join("com", "example", "lib", "R$string.class"), "--min-api 21"} {
+	// d8 gets one jar with every class, the app's and the libraries'.
+	input := filepath.Join(tmp, "dexinput.jar")
+	for _, w := range []string{input, "--min-api 21"} {
 		if !strings.Contains(d8, w) {
 			t.Errorf("d8 lacks %s: %s", w, d8)
+		}
+	}
+	classes := zipNames(t, input)
+	for _, c := range []string{"com/example/lib/Screen.class", "com/example/extra/Util.class", "a/B.class", "org/gioui/GioView.class", "com/example/lib/R$string.class"} {
+		if !classes[c] {
+			t.Errorf("d8's input lacks %s: %v", c, classes)
 		}
 	}
 
