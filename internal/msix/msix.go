@@ -63,6 +63,10 @@ type App struct {
 	Firewall       bool
 	FirewallPublic bool
 	FirewallPorts  []FirewallPort
+	// ContextActions are File Explorer context menu entries: a packaged
+	// app's own registry entries don't reach Explorer, so the package
+	// declares them, with a handler DLL starting the app.
+	ContextActions []ContextAction
 }
 
 // FirewallPort is an inbound rule: a protocol, "TCP" or "UDP", and a
@@ -125,6 +129,11 @@ func Write(a App, out string) error {
 		}
 		files = append(files, file{name: "Assets/" + n, body: b})
 	}
+	menu, err := contextMenuFiles(a, arch, exeName)
+	if err != nil {
+		return err
+	}
+	files = append(files, menu...)
 	manifest, err := Manifest(a, arch, exeName)
 	if err != nil {
 		return err
@@ -245,7 +254,7 @@ func Manifest(a App, arch, exe string) (string, error) {
 	}
 	e := html.EscapeString
 	var ext strings.Builder
-	if len(a.Protocols) > 0 || len(a.FileTypes) > 0 || a.StartupTask {
+	if len(a.Protocols) > 0 || len(a.FileTypes) > 0 || a.StartupTask || len(a.ContextActions) > 0 {
 		ext.WriteString("\n      <Extensions>")
 		for _, p := range a.Protocols {
 			fmt.Fprintf(&ext, "\n        <uap:Extension Category=\"windows.protocol\"><uap:Protocol Name=\"%s\"/></uap:Extension>", e(strings.ToLower(p)))
@@ -260,6 +269,7 @@ func Manifest(a App, arch, exe string) (string, error) {
 		if a.StartupTask {
 			fmt.Fprintf(&ext, "\n        <desktop:Extension Category=\"windows.startupTask\" Executable=\"%s\" EntryPoint=\"Windows.FullTrustApplication\"><desktop:StartupTask TaskId=\"%s\" Enabled=\"false\" DisplayName=\"%s\"/></desktop:Extension>", e(exe), StartupTaskID, e(a.Name))
 		}
+		ext.WriteString(contextMenuExtensions(a))
 		ext.WriteString("\n      </Extensions>")
 	}
 	pkgExt := firewallExtension(a, exe)
@@ -269,7 +279,10 @@ func Manifest(a App, arch, exe string) (string, error) {
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
-  IgnorableNamespaces="uap rescap desktop desktop2">
+  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+  xmlns:desktop5="http://schemas.microsoft.com/appx/manifest/desktop/windows10/5"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  IgnorableNamespaces="uap rescap desktop desktop2 desktop4 desktop5 com">
   <Identity Name="%s" Publisher="%s" Version="%s" ProcessorArchitecture="%s"/>
   <Properties>
     <DisplayName>%s</DisplayName>

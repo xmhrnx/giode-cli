@@ -188,12 +188,17 @@ func buildMSIX(c *config.Config, o buildOpts) (string, error) {
 	for _, p := range ports {
 		msixPorts = append(msixPorts, msix.FirewallPort{Protocol: p.Protocol, PortMin: p.PortMin, PortMax: p.PortMax})
 	}
+	var actions []msix.ContextAction
+	for _, a := range c.ContextActions {
+		actions = append(actions, msix.ContextAction{ID: a.ID, Label: a.Label, Files: a.Files, Extensions: a.Extensions, Folders: a.Folders, Background: a.Background})
+	}
 	done := progress.Begin("Packing the MSIX")
 	err = msix.Write(msix.App{
 		Name: c.App.Name, IdentityName: name, Publisher: m.Publisher, PublisherDisplayName: display,
 		Description: c.App.Description, Version: c.App.Version, Exe: exe, Icon: c.Path(c.App.Icon),
 		Arch: arch, Protocols: protocols, Files: dlls, FileTypes: msixTypes, StartupTask: m.StartupTask,
 		Firewall: inst.Firewall, FirewallPublic: inst.FirewallPublic, FirewallPorts: msixPorts,
+		ContextActions: actions,
 	}, out)
 	done(err)
 	if err != nil {

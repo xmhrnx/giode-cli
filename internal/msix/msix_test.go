@@ -134,7 +134,7 @@ func TestManifest_StartupTask(t *testing.T) {
 	if err := xml.Unmarshal([]byte(m), new(struct{})); err != nil {
 		t.Fatalf("manifest isn't XML: %v\n%s", err, m)
 	}
-	for _, w := range []string{`IgnorableNamespaces="uap rescap desktop desktop2"`, `<desktop:Extension Category="windows.startupTask" Executable="Agent.exe" EntryPoint="Windows.FullTrustApplication">`,
+	for _, w := range []string{`IgnorableNamespaces="uap rescap desktop desktop2 desktop4 desktop5 com"`, `<desktop:Extension Category="windows.startupTask" Executable="Agent.exe" EntryPoint="Windows.FullTrustApplication">`,
 		`<desktop:StartupTask TaskId="GiodeLaunchAtLogin" Enabled="false" DisplayName="Agent"/>`} {
 		if !strings.Contains(m, w) {
 			t.Errorf("lacks %s:\n%s", w, m)
@@ -194,5 +194,59 @@ func TestManifest_Firewall(t *testing.T) {
 		if !strings.Contains(m, w) {
 			t.Errorf("every port, public too: lacks %s:\n%s", w, m)
 		}
+	}
+}
+
+// Context actions are declared in the manifest, each a class of the
+// handler DLL packed beside the program with the list it reads.
+func TestContextActions(t *testing.T) {
+	a := App{Name: "Easy Send", IdentityName: "app.easysend", Publisher: "CN=Example", Version: "1.0.0",
+		ContextActions: []ContextAction{
+			{ID: "send", Label: "Send with EasySend", Files: true, Folders: true},
+			{ID: "send-pdf", Label: "Send PDF", Extensions: []string{"pdf"}},
+		}}
+	m, err := Manifest(a, "x64", "EasySend.exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := xml.Unmarshal([]byte(m), new(struct{})); err != nil {
+		t.Fatalf("manifest isn't XML: %v\n%s", err, m)
+	}
+	send := strings.Trim(contextCLSID("app.easysend", "send"), "{}")
+	pdf := strings.Trim(contextCLSID("app.easysend", "send-pdf"), "{}")
+	for _, w := range []string{
+		`<desktop4:Extension Category="windows.fileExplorerContextMenus">`,
+		"<desktop4:ItemType Type=\"*\">\n              <desktop4:Verb Id=\"send\" Clsid=\"" + send + "\"/>",
+		"<desktop5:ItemType Type=\"Directory\">\n              <desktop5:Verb Id=\"send\" Clsid=\"" + send + "\"/>",
+		"<desktop4:ItemType Type=\".pdf\">\n              <desktop4:Verb Id=\"sendpdf\" Clsid=\"" + pdf + "\"/>",
+		`<com:SurrogateServer DisplayName="Easy Send">`,
+		`<com:Class Id="` + send + `" Path="GiodeContextMenu.dll" ThreadingModel="STA"/>`,
+		`<com:Class Id="` + pdf + `" Path="GiodeContextMenu.dll" ThreadingModel="STA"/>`,
+	} {
+		if !strings.Contains(m, w) {
+			t.Errorf("lacks %s:\n%s", w, m)
+		}
+	}
+	if strings.Contains(m, "Directory\\Background") {
+		t.Error("an entry on the folder background nobody asked for")
+	}
+	// The class is the same for every build of the package.
+	if contextCLSID("app.easysend", "send") != "{"+send+"}" || contextCLSID("app.other", "send") == "{"+send+"}" {
+		t.Error("the class isn't stable, or isn't the package's own")
+	}
+
+	files, err := contextMenuFiles(a, "arm64", "EasySend.exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || files[0].name != "GiodeContextMenu.dll" || len(files[0].body) == 0 || files[0].body[0] != 'M' {
+		t.Fatalf("handler files %v", files)
+	}
+	want := "EasySend.exe\r\n{" + send + "}\tsend\tSend with EasySend\r\n{" + pdf + "}\tsend-pdf\tSend PDF\r\n"
+	if string(files[1].body) != want {
+		t.Errorf("list %q, want %q", files[1].body, want)
+	}
+	if _, err := contextMenuFiles(a, "x86", "EasySend.exe"); err == nil {
+		t.Error("an x86 package got the handler")
 	}
 }
