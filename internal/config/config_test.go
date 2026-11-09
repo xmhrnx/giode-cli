@@ -188,3 +188,31 @@ func TestFirewallPorts(t *testing.T) {
 		}
 	}
 }
+
+func TestLinuxIDAndScreenshots(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, FileName), []byte(`[app]
+name = "Easy Send"
+id = "app.easysend"
+version = "1.0.0"
+
+[linux]
+app_id = "io.github.xmhrnx.EasySend"
+screenshots = ["https://example.com/a.png", { url = "https://example.com/b.png", caption = "Receiving" }]
+`), 0o644)
+	c, err := Load(filepath.Join(dir, FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.LinuxID() != "io.github.xmhrnx.EasySend" || c.App.ID != "app.easysend" {
+		t.Errorf("LinuxID %q, app.id %q", c.LinuxID(), c.App.ID)
+	}
+	want := []Screenshot{{URL: "https://example.com/a.png"}, {URL: "https://example.com/b.png", Caption: "Receiving"}}
+	if len(c.Linux.Screenshots) != 2 || c.Linux.Screenshots[0] != want[0] || c.Linux.Screenshots[1] != want[1] {
+		t.Errorf("screenshots %+v", c.Linux.Screenshots)
+	}
+	c.Linux.Screenshots = []Screenshot{{URL: "shots/a.png"}}
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "screenshots") {
+		t.Errorf("a screenshot path, not a URL: %v", err)
+	}
+}

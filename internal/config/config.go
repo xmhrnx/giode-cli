@@ -419,6 +419,55 @@ type Linux struct {
 	// FlatpakPermissions are Flatpak finish-args, replacing the default
 	// display, GPU, network and sound access.
 	FlatpakPermissions []string `toml:"flatpak_permissions"`
+	// AppID replaces app.id for Linux: the Flatpak and AppStream ID,
+	// the .desktop file's and icon's names, and the window's Wayland app
+	// ID, which the desktop matches to the .desktop file. Flathub takes
+	// an ID only from a domain you control, or io.github.<user>.<App>.
+	AppID string `toml:"app_id"`
+	// Screenshots are shown by software centers, and Flathub requires
+	// them: image URLs ("https://example.com/main.png"), or tables with
+	// a url and a caption, the first being the main one.
+	Screenshots []Screenshot `toml:"screenshots"`
+}
+
+// Screenshot is an AppStream screenshot: an image URL and an optional
+// caption.
+type Screenshot struct {
+	URL     string `toml:"url"`
+	Caption string `toml:"caption"`
+}
+
+// UnmarshalTOML takes a URL alone or a {url, caption} table.
+func (s *Screenshot) UnmarshalTOML(v any) error {
+	switch v := v.(type) {
+	case string:
+		s.URL = v
+		return nil
+	case map[string]any:
+		for k, x := range v {
+			str, ok := x.(string)
+			switch {
+			case !ok:
+				return fmt.Errorf("linux.screenshots: %s must be a string", k)
+			case k == "url":
+				s.URL = str
+			case k == "caption":
+				s.Caption = str
+			default:
+				return fmt.Errorf("linux.screenshots: unknown key %q (url, caption)", k)
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("linux.screenshots: each must be a URL or a {url, caption} table")
+}
+
+// LinuxID is the app's ID on Linux: linux.app_id, or app.id.
+func (c *Config) LinuxID() string {
+	if c.Linux.AppID != "" {
+		return c.Linux.AppID
+	}
+	return c.App.ID
 }
 
 // Web configures WebAssembly builds.
@@ -586,6 +635,16 @@ func (c *Config) Validate() error {
 	errs = append(errs, c.validateContextActions()...)
 	if _, err := c.Windows.Installer.ParseFirewallPorts(); err != nil {
 		errs = append(errs, err)
+	}
+	if c.Linux.AppID != "" {
+		if err := CheckAppID(c.Linux.AppID); err != nil {
+			errs = append(errs, fmt.Errorf("linux.app_id: %w", err))
+		}
+	}
+	for i, sc := range c.Linux.Screenshots {
+		if !strings.HasPrefix(sc.URL, "https://") && !strings.HasPrefix(sc.URL, "http://") {
+			errs = append(errs, fmt.Errorf("linux.screenshots[%d]: %q isn't an image URL (software centers download it)", i, sc.URL))
+		}
 	}
 	errs = append(errs, c.validateFileTypes()...)
 	if _, err := c.ParseLinks(); err != nil {

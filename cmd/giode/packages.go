@@ -21,12 +21,15 @@ func linuxApp(c *config.Config, bin, arch string) linuxpkg.App {
 		arch = runtime.GOARCH
 	}
 	a := linuxpkg.App{
-		Name: c.App.Name, ID: c.App.ID, Version: c.App.Version, Build: c.App.Build,
+		Name: c.App.Name, ID: c.LinuxID(), Version: c.App.Version, Build: c.App.Build,
 		Summary: c.App.Description, Description: c.Linux.Description,
 		Publisher: c.App.Publisher, Maintainer: c.Linux.Maintainer,
 		Website: c.App.Website, License: c.Linux.License, Categories: c.Linux.Categories,
 		Binary: bin, Command: filepath.Base(bin), Icon: c.Path(c.App.Icon), Arch: arch,
 		FlatpakPermissions: c.Linux.FlatpakPermissions, Schemes: c.App.Schemes,
+	}
+	for _, s := range c.Linux.Screenshots {
+		a.Screenshots = append(a.Screenshots, linuxpkg.Screenshot{URL: s.URL, Caption: s.Caption})
 	}
 	a.MIMETypes, a.MIMEXML = c.LinuxMIMETypes(a.Command)
 	return a
@@ -101,8 +104,8 @@ func buildLinuxPackage(c *config.Config, kind string, o buildOpts) (string, erro
 			return "", ferr
 		}
 		if !built {
-			progress.Logf("flatpak-builder isn't installed; wrote the manifest to %s (flatpak-builder --user --install-deps-from=flathub build %s.json)", manifestDir, c.App.ID)
-			return filepath.Join(manifestDir, c.App.ID+".json"), nil
+			progress.Logf("flatpak-builder isn't installed; wrote the manifest to %s (flatpak-builder --user --install-deps-from=flathub build %s.json)", manifestDir, c.LinuxID())
+			return filepath.Join(manifestDir, c.LinuxID()+".json"), nil
 		}
 	}
 	if err != nil {

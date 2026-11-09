@@ -173,3 +173,24 @@ func TestFlatpakManifest(t *testing.T) {
 		}
 	}
 }
+
+func TestMetainfoScreenshots(t *testing.T) {
+	a := testApp(t)
+	a.Screenshots = []Screenshot{{URL: "https://example.com/main.png", Caption: "Sending files"}, {URL: "https://example.com/receive.png"}}
+	m := Metainfo(a)
+	for _, w := range []string{
+		"<screenshots>\n    <screenshot type=\"default\">\n      <image>https://example.com/main.png</image>\n      <caption>Sending files</caption>\n    </screenshot>",
+		"<screenshot>\n      <image>https://example.com/receive.png</image>\n    </screenshot>\n  </screenshots>",
+	} {
+		if !strings.Contains(m, w) {
+			t.Errorf("metainfo lacks %q:\n%s", w, m)
+		}
+	}
+	if tool, err := exec.LookPath("appstreamcli"); err == nil {
+		path := filepath.Join(t.TempDir(), a.ID+".metainfo.xml")
+		os.WriteFile(path, []byte(m), 0o644)
+		if b, err := exec.Command(tool, "validate", "--no-net", path).CombinedOutput(); err != nil && strings.Contains(string(b), "E:") {
+			t.Errorf("appstreamcli validate: %v\n%s", err, b)
+		}
+	}
+}

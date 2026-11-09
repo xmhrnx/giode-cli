@@ -689,7 +689,7 @@ func buildLinux(c *config.Config, o buildOpts) (string, error) {
 		bin, _ = filepath.Abs(o.output)
 		d = filepath.Dir(bin)
 	}
-	ldflags := strings.TrimSpace("-s -w -X gioui.org/app.ID=" + c.App.ID + " " + desktopLdflags(c, "linux") + " " + linuxRpathLdflag(c, filepath.Base(bin)))
+	ldflags := strings.TrimSpace("-s -w -X gioui.org/app.ID=" + c.LinuxID() + " " + desktopLdflags(c, "linux") + " " + linuxRpathLdflag(c, filepath.Base(bin)))
 	gb, err := prepareGio(c, "linux")
 	if err != nil {
 		return "", err
@@ -711,7 +711,7 @@ func buildLinux(c *config.Config, o buildOpts) (string, error) {
 		return "", err
 	}
 	if icon := c.Path(c.App.Icon); icon != "" {
-		if err := writeLinuxIcon(icon, filepath.Join(d, c.App.ID+".png")); err != nil {
+		if err := writeLinuxIcon(icon, filepath.Join(d, c.LinuxID()+".png")); err != nil {
 			return "", err
 		}
 	}
@@ -720,7 +720,7 @@ func buildLinux(c *config.Config, o buildOpts) (string, error) {
 		cats = strings.Join(c.Linux.Categories, ";") + ";"
 	}
 	desktop := fmt.Sprintf("[Desktop Entry]\nType=Application\nName=%s\nExec=%s %%U\nIcon=%s\nCategories=%s\nTerminal=false\n",
-		c.App.Name, filepath.Base(bin), c.App.ID, cats)
+		c.App.Name, filepath.Base(bin), c.LinuxID(), cats)
 	types, _ := c.LinuxMIMETypes(filepath.Base(bin))
 	for _, s := range c.App.Schemes {
 		types = append(types, "x-scheme-handler/"+s)
@@ -728,7 +728,7 @@ func buildLinux(c *config.Config, o buildOpts) (string, error) {
 	if len(types) > 0 {
 		desktop += "MimeType=" + strings.Join(types, ";") + ";\n"
 	}
-	if err := os.WriteFile(filepath.Join(d, c.App.ID+".desktop"), []byte(desktop), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, c.LinuxID()+".desktop"), []byte(desktop), 0o644); err != nil {
 		return "", err
 	}
 	return bin, nil

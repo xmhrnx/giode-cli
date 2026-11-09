@@ -56,6 +56,13 @@ type App struct {
 	// shared-mime-info package declaring the ones only it knows.
 	MIMETypes []string
 	MIMEXML   string
+	// Screenshots are AppStream screenshots, the first the main one.
+	Screenshots []Screenshot
+}
+
+// Screenshot is an image URL with an optional caption.
+type Screenshot struct {
+	URL, Caption string
 }
 
 // LibDir is where a package's bundled libraries go, below its prefix
@@ -181,6 +188,21 @@ func Metainfo(a App) string {
 	fmt.Fprintf(&b, "  <launchable type=\"desktop-id\">%s.desktop</launchable>\n", e(a.ID))
 	if a.Website != "" {
 		fmt.Fprintf(&b, "  <url type=\"homepage\">%s</url>\n", e(a.Website))
+	}
+	if len(a.Screenshots) > 0 {
+		b.WriteString("  <screenshots>\n")
+		for i, sc := range a.Screenshots {
+			kind := ""
+			if i == 0 {
+				kind = ` type="default"`
+			}
+			fmt.Fprintf(&b, "    <screenshot%s>\n      <image>%s</image>\n", kind, e(sc.URL))
+			if sc.Caption != "" {
+				fmt.Fprintf(&b, "      <caption>%s</caption>\n", e(sc.Caption))
+			}
+			b.WriteString("    </screenshot>\n")
+		}
+		b.WriteString("  </screenshots>\n")
 	}
 	fmt.Fprintf(&b, "  <releases>\n    <release version=\"%s\" date=\"%s\"/>\n  </releases>\n", e(a.Version), time.Now().UTC().Format("2006-01-02"))
 	fmt.Fprintf(&b, "  <content_rating type=\"oars-1.1\"/>\n")
