@@ -53,7 +53,7 @@ target needs.
 | `giode new [dir]` | Creates a project: a counter app in `main.go`, `go.mod` with the latest giode, `giode.toml` set up for the chosen platforms, placeholder assets (`assets/icon.png`, `assets/README.md`), `.gitignore` and a README. In a terminal it asks first: a checklist of every platform (Windows, macOS, Linux, Android, iOS, Web - whether or not this computer builds them; arrow keys move, Space checks, Enter goes on), then the name, app ID, version, module path, publisher, description and website, each with a suggestion Enter takes. `-y` skips the questions; `-platforms android,ios`, `-id`, `-name` and `-version` answer them. |
 | `giode build` (no target) | Builds for this computer's platform: `macos`, `windows` or `linux`, the same as `giode build desktop`. |
 | `giode init` | Adds `giode.toml` to an existing Go module. |
-| `giode build <target>...` | Builds into `dist/<platform>`. Targets: `android` (APK), `aab` (Play bundle), `ios` (IPA), `ios-sim`, `macos` (universal), `dmg`, `windows`, `windows-installer` (setup program), `msix`, `winget`, `linux`, `deb`, `rpm`, `appimage`, `flatpak`, `web`, `desktop` (this computer) and `all` (every target this computer has the tools and settings for, within `app.platforms`; it lists what it skips and why). `-release` signs with your certificates. Each step shows live as it runs, with a summary at the end. |
+| `giode build <target>...` | Builds into `dist/<platform>`. Targets: `android` (APK), `aab` (Play bundle), `ios` (IPA), `ios-sim`, `macos` (universal), `dmg`, `windows`, `windows-installer` (setup program), `msix`, `winget`, `linux`, `deb`, `rpm`, `appimage`, `flatpak`, `snap`, `flathub` (a Flathub submission built from source), `web`, `desktop` (this computer) and `all` (every target this computer has the tools and settings for, within `app.platforms`; it lists what it skips and why). `-release` signs with your certificates. Each step shows live as it runs, with a summary at the end. |
 | `giode run [target]` | Builds for a target and runs it: `desktop` (default: `go build`, then the program), `linux`, `windows` (Wine off Windows), `windows-installer`, `macos`, `android` (builds the device's architecture, installs, launches, follows the log), `ios-sim`, `web` (serves `dist/web`). `-mcp` starts giode's MCP server so an AI agent can drive the app. |
 | `giode devices` | Lists Android devices and booted iOS simulators. |
 | `giode doctor` | Checks Go, the Android SDK, build tools, platform, NDK and JDK, Xcode, and Gio's Linux libraries, with install commands for what's missing. |
@@ -93,6 +93,8 @@ the app starts.
 | `deb`, `rpm` | Linux | as `linux`; packages are written by giode itself |
 | `appimage` | Linux | as `linux`, plus [appimagetool](https://github.com/AppImage/appimagetool/releases) on PATH |
 | `flatpak` | Linux | as `linux`; with `flatpak-builder` a `.flatpak` bundle, without it the manifest |
+| `snap` | Linux | as `linux`; with `snapcraft` a `.snap`, without it the snapcraft project |
+| `flathub` | Linux, macOS | git and Go: a manifest building the app from its git tag, for a Flathub submission |
 | `web` | anywhere | nothing extra |
 
 `giode doctor` checks all of these.
@@ -186,6 +188,7 @@ desktop_shortcut = true
 license = "assets/license.txt"
 firewall = true               # inbound firewall rule for the app; removed on uninstall
 # firewall_public = true      # also on public networks (default: private and domain)
+firewall_ports = ["tcp:53317-53318", "udp:53317"]  # the MSIX's rules: these ports (default: all)
 
 [windows.signing]
 certificate = "codesign.pfx"  # password in $GIODE_WINDOWS_CERT_PASS
@@ -209,6 +212,13 @@ description = "Longer text for package managers and software centers."
 maintainer = "Jane Doe <jane@example.com>"   # .deb/.rpm metadata
 license = "MIT"                              # SPDX expression
 # flatpak_permissions = ["--share=ipc", "--socket=wayland", "--device=dri"]
+app_id = "io.github.example.PocketAgent"     # replaces app.id on Linux (Flathub's ID)
+screenshots = ["https://example.com/main.png", { url = "https://example.com/chat.png", caption = "Chatting" }]
+
+[linux.snap]                                 # giode build snap
+name = "pocket-agent"                        # registered name; adds giode ci's snap job
+plugs = ["desktop", "wayland", "x11", "opengl", "network", "network-bind", "home"]
+# grade = "stable"; channel = "stable"
 
 [web]
 port = 8080
@@ -301,6 +311,52 @@ private and domain networks (`firewall_public = true` adds public ones), so a se
 LAN discovery in the app works without Windows asking, and the uninstaller removes it. A
 per-machine installer adds it while elevated; a per-user one asks for administrator
 rights once, for the rule alone, and installs anyway if that's declined.
+
+An MSIX package can't run netsh: with `firewall = true` its manifest declares the rules
+instead (`windows.firewallRules`), allowing the app on every TCP and UDP port, or only on
+`firewall_ports` (`"tcp:53317-53318"`, `"udp:53317"`).
+
+## MSIX and the Microsoft Store
+
+A packaged app's registry writes stay inside its package, so the File Explorer entries
+giode's `InstallContextActions` writes never reach Explorer in a Store install. The MSIX
+declares `context_actions` itself (`windows.fileExplorerContextMenus`, on files, by
+extension, folders or a folder's background), each a COM class of a small handler packed
+beside the program (`GiodeContextMenu.dll`, x64 and ARM64 packages). Choosing an entry
+starts the app once with `--giode-action=<id>` and every selected path, as giode's context
+actions take them.
+
+## Flathub
+
+Flathub builds open-source apps from source, offline, on its own servers.
+`giode build flathub` writes a submission into `dist/linux/flathub`:
+
+- a manifest building the app from its git tag (the tag on the checked-out commit, or
+  `v<version>.<build>` or `v<version>`, with its commit), with Go from the
+  `org.freedesktop.Sdk.Extension.golang` SDK extension on runtime 25.08;
+- every file in `go.sum` as a source, hashed, in a module proxy directory that the build
+  uses with no network;
+- Gio's zip with giode's patches as `gio-giode.patch`;
+- the desktop entry, AppStream file (with `linux.screenshots`, which Flathub requires) and
+  icons.
+
+`linux.app_id` sets the Flathub ID when it can't be `app.id`: Flathub accepts only an ID
+under a domain you control, or `io.github.<user>.<App>`. Copy the folder into the
+submission repository and check it with
+`flatpak-builder --user --install-deps-from=flathub --force-clean build <id>.json`. Libraries
+in `native.linux` aren't built from source; add them as modules before the app's.
+
+## Snap Store
+
+`giode build snap` writes a snapcraft project in `dist/linux/snap` with the built app:
+`core24`, strict confinement, the GNOME extension for the desktop libraries, and
+`linux.snap.plugs`. It packs it into a `.snap` when snapcraft is installed. With
+`linux.snap.name` set (register it first with `snapcraft register`), `giode ci`'s workflow
+builds the snap on each Linux runner and attaches it to the release. On a tag, it uploads
+it to `linux.snap.channel` (stable by default) when the repository has the
+`SNAPCRAFT_STORE_CREDENTIALS` secret (`snapcraft export-login -`). Plugs the store doesn't
+connect on its own, such as `network-observe` and `removable-media`, need a request in the
+Snap forum, or users connect them with `snap connect`.
 
 ## Launch screen colour
 
