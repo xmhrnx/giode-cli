@@ -346,7 +346,11 @@ func compileAndroid(tmpDir string, tools *androidTools, bi *buildInfo) (err erro
 			"-bootclasspath", tools.androidjar,
 			"-d", classes,
 		)
-		javac.Args = append(javac.Args, javaFiles...)
+		sources, err := argFile(filepath.Join(tmpDir, "javac-sources.txt"), javaFiles)
+		if err != nil {
+			return err
+		}
+		javac.Args = append(javac.Args, sources)
 		builds.Go(func() error {
 			_, err := runCmd(javac)
 			return err
@@ -591,13 +595,18 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, li
 	}
 
 	if len(classFiles) > 0 {
+		// One input jar keeps the command line short (see dexInput).
+		input := filepath.Join(tmpDir, "dexinput.jar")
+		if err := dexInput(classFiles, tmpDir, input); err != nil {
+			return err
+		}
 		d8 := exec.Command(
 			filepath.Join(tools.buildtools, "d8"),
 			"--lib", tools.androidjar,
 			"--output", dexDir,
 			"--min-api", strconv.Itoa(minSDK),
+			input,
 		)
-		d8.Args = append(d8.Args, classFiles...)
 		if _, err := runCmd(d8); err != nil {
 			major, minor, ok := determineJDKVersion()
 			if ok && (major != 1 || minor != 8) {

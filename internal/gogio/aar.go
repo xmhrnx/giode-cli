@@ -472,7 +472,11 @@ func compileR(genDir, outDir string) ([]string, error) {
 	}
 	// R classes need nothing beyond java.lang: the JDK's own classes do.
 	cmd := exec.Command(javac, "-target", "1.8", "-source", "1.8", "-nowarn", "-Xlint:-options", "-d", outDir)
-	cmd.Args = append(cmd.Args, srcs...)
+	sources, err := argFile(filepath.Join(filepath.Dir(outDir), "rclasses-sources.txt"), srcs)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Args = append(cmd.Args, sources)
 	if _, err := runCmd(cmd); err != nil {
 		return nil, err
 	}
