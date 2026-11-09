@@ -231,3 +231,36 @@ func TestRunShowsOutput(t *testing.T) {
 		t.Errorf("error %q: want the command's output and no password", msg)
 	}
 }
+
+// With app.share_target, the iOS job decodes the share extension's
+// profile too, and builds for a device only when both profiles are there.
+func TestWorkflowShareTarget(t *testing.T) {
+	plain := workflow(&config.Config{App: config.App{Platforms: []string{"ios"}}})
+	if strings.Contains(plain, "IOS_SHARE_PROFILE_BASE64") || !strings.Contains(plain, `if [ -n "$GIODE_IOS_PROFILE" ]; then giode build ios; else giode build ios-sim; fi`) {
+		t.Errorf("without share_target:\n%s", plain)
+	}
+	wf := workflow(&config.Config{App: config.App{Platforms: []string{"ios"}, ShareTarget: true}})
+	for _, w := range []string{
+		"IOS_SHARE_PROFILE_BASE64: ${{ secrets.IOS_SHARE_PROFILE_BASE64 }}",
+		`echo "$IOS_SHARE_PROFILE_BASE64" | base64 -d > "$RUNNER_TEMP/share.mobileprovision"`,
+		`echo "GIODE_IOS_SHARE_PROFILE=$RUNNER_TEMP/share.mobileprovision" >> "$GITHUB_ENV"`,
+		`if [ -n "$GIODE_IOS_PROFILE" ] && [ -n "$GIODE_IOS_SHARE_PROFILE" ]; then`,
+		"giode build ios-sim",
+	} {
+		if !strings.Contains(wf, w) {
+			t.Errorf("share_target workflow lacks %q", w)
+		}
+	}
+	if placeholder.MatchString(wf) {
+		t.Errorf("a placeholder is left:\n%s", wf)
+	}
+	if py, err := exec.LookPath("python3"); err == nil {
+		for _, s := range []string{plain, wf} {
+			cmd := exec.Command(py, "-c", "import sys, yaml; yaml.safe_load(sys.stdin)")
+			cmd.Stdin = strings.NewReader(s)
+			if out, err := cmd.CombinedOutput(); err != nil && !strings.Contains(string(out), "No module named") {
+				t.Errorf("invalid YAML: %v\n%s", err, out)
+			}
+		}
+	}
+}

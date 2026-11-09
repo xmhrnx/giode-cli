@@ -144,11 +144,12 @@ Secrets it uses when set (Settings > Secrets and variables > Actions):
 	GIODE_NOTARY_PASS                              notarization password
 	IOS_CERT_BASE64, IOS_CERT_PASS                 iOS distribution .p12
 	IOS_PROFILE_BASE64                             iOS provisioning profile
+	IOS_SHARE_PROFILE_BASE64                       iOS share extension's profile (app.share_target)
 	IOS_TEAM_ID                                    Apple team ID (ios.team_id)
 	GIODE_UPDATE_KEY                               update feed key (giode release)
 
-Without the iOS certificate and profile the iOS job builds for the
-simulator only.
+Without the iOS certificate and profile (and, with app.share_target, the
+share extension's profile) the iOS job builds for the simulator only.
 `
 
 func cmdCI(args []string) error {
@@ -219,6 +220,9 @@ type ciData struct {
 	// The platforms built: Linux packages, the web, Android, macOS,
 	// iOS. LinuxJob is whether the Linux job has anything to build.
 	LinuxPkgs, Web, Android, MacOS, IOS, LinuxJob bool
+	// ShareTarget is app.share_target: a device build for iOS also needs
+	// the share extension's profile.
+	ShareTarget bool
 }
 
 func newCIData(c *config.Config) ciData {
@@ -258,6 +262,7 @@ func newCIData(c *config.Config) ciData {
 		Android:      has("android"),
 		MacOS:        has("macos"),
 		IOS:          has("ios"),
+		ShareTarget:  c.App.ShareTarget,
 	}
 	for i, a := range archs {
 		runner := "ubuntu-latest"
@@ -499,6 +504,9 @@ jobs:
     env:
       IOS_CERT_BASE64: ${{ secrets.IOS_CERT_BASE64 }}
       IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+[[- if .ShareTarget]]
+      IOS_SHARE_PROFILE_BASE64: ${{ secrets.IOS_SHARE_PROFILE_BASE64 }}
+[[- end]]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -524,13 +532,34 @@ jobs:
           rm cert.p12
           echo "$IOS_PROFILE_BASE64" | base64 -d > "$RUNNER_TEMP/app.mobileprovision"
           echo "GIODE_IOS_PROFILE=$RUNNER_TEMP/app.mobileprovision" >> "$GITHUB_ENV"
+[[- if .ShareTarget]]
+          # app.share_target: the share extension has its own profile.
+          if [ -n "$IOS_SHARE_PROFILE_BASE64" ]; then
+            echo "$IOS_SHARE_PROFILE_BASE64" | base64 -d > "$RUNNER_TEMP/share.mobileprovision"
+            echo "GIODE_IOS_SHARE_PROFILE=$RUNNER_TEMP/share.mobileprovision" >> "$GITHUB_ENV"
+          fi
+[[- end]]
       - name: Build
         env:
           GIODE_IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
         run: |
+[[- if .ShareTarget]]
+          # A device build needs the certificate and both profiles, the
+          # app's and the share extension's; without them, check that
+          # the app builds for the simulator.
+          if [ -n "$GIODE_IOS_PROFILE" ] && [ -n "$GIODE_IOS_SHARE_PROFILE" ]; then
+            giode build ios
+          else
+            if [ -n "$GIODE_IOS_PROFILE" ]; then
+              echo "::warning::app.share_target needs the IOS_SHARE_PROFILE_BASE64 secret for a device build; building for the simulator"
+            fi
+            giode build ios-sim
+          fi
+[[- else]]
           # A device build needs the certificate and profile; without
           # them, check that the app builds for the simulator.
           if [ -n "$GIODE_IOS_PROFILE" ]; then giode build ios; else giode build ios-sim; fi
+[[- end]]
       - uses: actions/upload-artifact@v4
         with:
           name: ios

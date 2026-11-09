@@ -484,7 +484,10 @@ The workflow builds the platforms in `app.platforms` (without it, all but iOS). 
 builds an IPA when the repository has the `IOS_CERT_BASE64`, `IOS_CERT_PASS` and
 `IOS_PROFILE_BASE64` secrets (`IOS_TEAM_ID` sets `ios.team_id`), and checks the simulator
 build otherwise; the profile reaches the build through `$GIODE_IOS_PROFILE`, so giode.toml
-needn't name it. A test job runs first and stops the release when it fails. Change what it
+needn't name it. With `app.share_target`, the share extension's profile comes from the
+`IOS_SHARE_PROFILE_BASE64` secret (through `$GIODE_IOS_SHARE_PROFILE`), and the IPA is
+built only when both profiles are there; without it, the job checks the simulator build
+and warns rather than failing the release. A test job runs first and stops the release when it fails. Change what it
 runs, or turn it off, with `test`. `trigger = "release"` builds when a GitHub release is
 published, adding the files to it, instead of on a pushed tag:
 
