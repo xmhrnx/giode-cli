@@ -36,6 +36,9 @@ no target it builds for this computer's platform, like desktop:
 	ios-sim   an app for the iOS simulator (macOS only)
 	macos     a universal (Apple silicon and Intel) macOS app bundle (macOS only)
 	dmg       the app in a disk image with a link to Applications (macOS only)
+	mas       the app for the Mac App Store: signed through its profile, in
+	          the sandbox (macos.store), in a signed .pkg for Transporter
+	          (macOS only)
 	windows   a Windows executable with icon and manifest (from any OS)
 	windows-installer
 	          a Windows setup program (<App>-<version>-<arch>-setup.exe) with Start
@@ -151,7 +154,7 @@ func cmdBuild(args []string) error {
 }
 
 // targetNames are the targets build accepts, besides desktop and all.
-var targetNames = []string{"android", "aab", "ios", "ios-sim", "macos", "dmg", "windows", "windows-installer", "msix", "winget", "linux", "deb", "rpm", "appimage", "flatpak", "flathub", "snap", "web"}
+var targetNames = []string{"android", "aab", "ios", "ios-sim", "macos", "dmg", "mas", "windows", "windows-installer", "msix", "winget", "linux", "deb", "rpm", "appimage", "flatpak", "flathub", "snap", "web"}
 
 // targetAliases are short and alternative target names.
 var targetAliases = map[string]string{
@@ -251,7 +254,7 @@ func targetPlatform(t string) string {
 		return "android"
 	case "ios", "ios-sim":
 		return "ios"
-	case "macos", "dmg":
+	case "macos", "dmg", "mas", "mas-app":
 		return "macos"
 	case "windows", "windows-installer", "msix", "winget":
 		return "windows"
@@ -350,7 +353,9 @@ func buildTargetUncached(c *config.Config, target string, o buildOpts) (string, 
 		return buildDMG(c, o)
 	case "winget":
 		return buildWinget(c, o)
-	case "android", "aab", "ios", "ios-sim", "macos", "windows", "web":
+	case "mas":
+		return buildMAS(c, o)
+	case "android", "aab", "ios", "ios-sim", "macos", "mas-app", "windows", "web":
 	default:
 		return "", fmt.Errorf("unknown target %q; targets: %s, desktop, all", target, strings.Join(targetNames, ", "))
 	}
@@ -373,7 +378,7 @@ func buildTargetUncached(c *config.Config, target string, o buildOpts) (string, 
 	}
 	defer gb.cleanup()
 	g.ModFile, g.Tags = gb.modfile, gb.tags
-	if target == "macos" {
+	if target == "macos" || target == "mas-app" {
 		g.MacBundle = macBundleLibs(c)
 	}
 	symbols := ""
@@ -592,7 +597,7 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 			}
 			g.SignKey = c.Path(c.IOS.Profile)
 		}
-	case "macos":
+	case "macos", "mas-app":
 		if runtime.GOOS != "darwin" {
 			return g, errors.New("macOS app bundles need macOS")
 		}
@@ -607,12 +612,30 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 			return g, err
 		}
 		g.Extras = gogio.Extras{InfoPlist: plist, PrivacyManifest: privacy, Entitlements: c.MacOSEntitlements()}
+		if target == "mas-app" {
+			// The Mac App Store's: signed through its profile, in the
+			// sandbox, not notarized (the store reviews it instead).
+			profile := c.MacOS.Store.Profile
+			if profile == "" {
+				profile = c.MacOS.Profile
+			}
+			if profile == "" {
+				return g, errors.New("Mac App Store builds need the store's provisioning profile: macos.store.profile (or macos.profile)")
+			}
+			g.SignKey = c.Path(profile)
+			for k, v := range c.StoreEntitlements() {
+				g.Extras.Entitlements[k] = v
+			}
+			platform, file = "macos/appstore", binaryName(c)+".app"
+			break
+		}
 		if o.release {
 			switch {
+			case c.MacOS.Identity != "":
+				// Developer ID, for the .app and .dmg people download.
+				g.SignKey = c.MacOS.Identity
 			case c.MacOS.Profile != "":
 				g.SignKey = c.Path(c.MacOS.Profile)
-			case c.MacOS.Identity != "":
-				g.SignKey = c.MacOS.Identity
 			default:
 				progress.Logf("the app is unsigned; set macos.identity in giode.toml so Gatekeeper lets it open")
 			}
@@ -775,6 +798,9 @@ func desktopLdflags(c *config.Config, target string) string {
 	switch target {
 	case "windows", "macos", "linux":
 		flags += " " + c.ContextActionsLdflag() + " " + c.UpdateLdflags()
+	case "mas-app":
+		// The store updates the app: no update feed.
+		flags += " " + c.ContextActionsLdflag()
 	}
 	return strings.Join(withLegacyGiodePath(strings.Fields(flags)), " ")
 }

@@ -37,7 +37,7 @@ func (b gioBuild) goArgs() []string {
 // the nometal tag for app.renderer = "opengl" on Apple targets.
 func prepareGio(c *config.Config, target string) (gioBuild, error) {
 	b := gioBuild{tags: c.App.Tags, cleanup: func() {}}
-	apple := target == "macos" || target == "dmg" || target == "ios" || target == "ios-sim" ||
+	apple := target == "macos" || target == "dmg" || target == "mas" || target == "mas-app" || target == "ios" || target == "ios-sim" ||
 		(target == "desktop" && runtime.GOOS == "darwin")
 	if c.App.Renderer == "opengl" && apple {
 		b.tags = addTag(b.tags, "nometal")

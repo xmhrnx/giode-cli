@@ -260,6 +260,70 @@ func wingetName(s string) string {
 	return b.String()
 }
 
+// buildMAS builds the app for the Mac App Store: signed with the Apple
+// Distribution certificate through the store's provisioning profile
+// (embedded), with the sandbox's entitlements, in an installer package
+// signed with the Mac installer certificate, the format Transporter
+// takes.
+func buildMAS(c *config.Config, o buildOpts) (string, error) {
+	if runtime.GOOS != "darwin" {
+		return "", fmt.Errorf("Mac App Store builds need macOS (codesign, productbuild)")
+	}
+	if _, ok := c.MacOS.Plist["LSApplicationCategoryType"]; !ok {
+		return "", fmt.Errorf("the Mac App Store needs a category: set LSApplicationCategoryType in [macos.plist], like \"public.app-category.utilities\"")
+	}
+	identity := c.MacOS.Store.InstallerIdentity
+	if identity == "" {
+		var err error
+		if identity, err = installerIdentity(); err != nil {
+			return "", err
+		}
+	}
+	appOpts := o
+	appOpts.output = ""
+	app, err := buildTarget(c, "mas-app", appOpts)
+	if err != nil {
+		return "", err
+	}
+	out := filepath.Join(filepath.Dir(app), fmt.Sprintf("%s-%s.pkg", binaryName(c), c.App.Version))
+	if o.output != "" {
+		out, _ = filepath.Abs(o.output)
+	}
+	os.Remove(out)
+	if err := run(exec.Command("productbuild", "--component", app, "/Applications", "--sign", identity, out)); err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// installerIdentity finds the Mac installer certificate in the keychain.
+func installerIdentity() (string, error) {
+	out, err := output("security", "find-identity", "-v", "-p", "basic")
+	if err != nil {
+		return "", err
+	}
+	if id := findInstallerIdentity(out); id != "" {
+		return id, nil
+	}
+	return "", fmt.Errorf("no Mac installer certificate (\"3rd Party Mac Developer Installer\" or \"Mac Installer Distribution\") in the keychain: create one at developer.apple.com, or set macos.store.installer_identity")
+}
+
+// findInstallerIdentity picks the installer identity from security
+// find-identity's output.
+func findInstallerIdentity(list string) string {
+	for _, line := range strings.Split(list, "\n") {
+		i, j := strings.Index(line, `"`), strings.LastIndex(line, `"`)
+		if i < 0 || j <= i {
+			continue
+		}
+		name := line[i+1 : j]
+		if strings.HasPrefix(name, "3rd Party Mac Developer Installer:") || strings.HasPrefix(name, "Mac Installer Distribution:") {
+			return name
+		}
+	}
+	return ""
+}
+
 // buildDMG builds the macOS app and puts it in a disk image with a link
 // to Applications, signed and notarized like the app under -release.
 func buildDMG(c *config.Config, o buildOpts) (string, error) {

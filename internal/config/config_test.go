@@ -216,3 +216,27 @@ screenshots = ["https://example.com/a.png", { url = "https://example.com/b.png",
 		t.Errorf("a screenshot path, not a URL: %v", err)
 	}
 }
+
+func TestStoreEntitlements(t *testing.T) {
+	c := &Config{}
+	c.MacOS.Store.Entitlements = []string{"network.client", "network.server", "files.user-selected.read-write", "com.apple.security.files.downloads.read-write"}
+	got := c.StoreEntitlements()
+	for _, k := range []string{
+		"com.apple.security.app-sandbox",
+		"com.apple.security.network.client",
+		"com.apple.security.network.server",
+		"com.apple.security.files.user-selected.read-write",
+		"com.apple.security.files.downloads.read-write",
+		"com.apple.security.files.bookmarks.app-scope",
+	} {
+		if got[k] != true {
+			t.Errorf("lacks %s: %v", k, got)
+		}
+	}
+	if len(got) != 6 {
+		t.Errorf("%d entitlements, want 6: %v", len(got), got)
+	}
+	if got := (&Config{}).StoreEntitlements(); len(got) != 1 || got["com.apple.security.app-sandbox"] != true {
+		t.Errorf("no entitlements set: %v, want the sandbox alone", got)
+	}
+}

@@ -300,3 +300,50 @@ func TestWorkflowSnap(t *testing.T) {
 		}
 	}
 }
+
+func TestFindInstallerIdentity(t *testing.T) {
+	list := `  1) 1A2B "Apple Distribution: Mehran Z (ABCDE12345)"
+  2) 3C4D "3rd Party Mac Developer Installer: Mehran Z (ABCDE12345)"
+     2 valid identities found`
+	if got := findInstallerIdentity(list); got != "3rd Party Mac Developer Installer: Mehran Z (ABCDE12345)" {
+		t.Errorf("got %q", got)
+	}
+	if got := findInstallerIdentity(`  1) 1A2B "Apple Distribution: X (T)"`); got != "" {
+		t.Errorf("found %q among no installer identities", got)
+	}
+}
+
+// macos.store adds the Mac App Store build to the macOS job, with its
+// certificates and profile from secrets, the .pkg uploaded beside the
+// .dmg.
+func TestWorkflowMAS(t *testing.T) {
+	plain := workflow(&config.Config{App: config.App{Platforms: []string{"macos"}}})
+	if strings.Contains(plain, "giode build mas") {
+		t.Error("a Mac App Store build without macos.store")
+	}
+	c := &config.Config{App: config.App{Platforms: []string{"macos"}}}
+	c.MacOS.Store.Entitlements = []string{"network.client"}
+	wf := workflow(c)
+	for _, w := range []string{
+		"MACOS_STORE_CERT_BASE64: ${{ secrets.MACOS_STORE_CERT_BASE64 }}",
+		"MACOS_INSTALLER_CERT_BASE64: ${{ secrets.MACOS_INSTALLER_CERT_BASE64 }}",
+		"MACOS_PROFILE_BASE64: ${{ secrets.MACOS_PROFILE_BASE64 }}",
+		`echo "GIODE_MACOS_STORE_PROFILE=$RUNNER_TEMP/store.provisionprofile" >> "$GITHUB_ENV"`,
+		"if: env.GIODE_MACOS_STORE_PROFILE != ''\n        run: giode build mas",
+		"dist/macos/appstore/*.pkg",
+	} {
+		if !strings.Contains(wf, w) {
+			t.Errorf("lacks %q", w)
+		}
+	}
+	if placeholder.MatchString(wf) {
+		t.Errorf("a placeholder is left:\n%s", wf)
+	}
+	if py, err := exec.LookPath("python3"); err == nil {
+		cmd := exec.Command(py, "-c", "import sys, yaml; yaml.safe_load(sys.stdin)")
+		cmd.Stdin = strings.NewReader(wf)
+		if out, err := cmd.CombinedOutput(); err != nil && !strings.Contains(string(out), "No module named") {
+			t.Errorf("invalid YAML: %v\n%s", err, out)
+		}
+	}
+}

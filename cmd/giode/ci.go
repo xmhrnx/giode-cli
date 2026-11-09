@@ -148,6 +148,10 @@ Secrets it uses when set (Settings > Secrets and variables > Actions):
 	IOS_TEAM_ID                                    Apple team ID (ios.team_id)
 	GIODE_UPDATE_KEY                               update feed key (giode release)
 	SNAPCRAFT_STORE_CREDENTIALS                    Snap Store upload (snapcraft export-login)
+	MACOS_STORE_CERT_BASE64, MACOS_STORE_CERT_PASS  Apple Distribution .p12 (macos.store)
+	MACOS_INSTALLER_CERT_BASE64, MACOS_INSTALLER_CERT_PASS
+	                                               Mac installer .p12 (3rd Party Mac Developer Installer)
+	MACOS_PROFILE_BASE64                           Mac App Store provisioning profile
 
 Without the iOS certificate and profile (and, with app.share_target, the
 share extension's profile) the iOS job builds for the simulator only.
@@ -228,6 +232,8 @@ type ciData struct {
 	// Store on a release (linux.snap.name set), to SnapChannel.
 	Snap        bool
 	SnapChannel string
+	// MAS builds the Mac App Store package too (macos.store set).
+	MAS bool
 }
 
 func newCIData(c *config.Config) ciData {
@@ -297,6 +303,8 @@ func newCIData(c *config.Config) ciData {
 	}
 	d.LinuxJob = d.LinuxPkgs || d.Web || d.Android || len(d.CrossWindows) > 0
 	d.Snap = d.LinuxPkgs && c.Linux.Snap.Name != ""
+	st := c.MacOS.Store
+	d.MAS = d.MacOS && (len(st.Entitlements) > 0 || st.Profile != "" || st.InstallerIdentity != "")
 	d.SnapChannel = orDefault(c.Linux.Snap.Channel, "stable")
 	var needs []string
 	for _, j := range []struct {
@@ -514,6 +522,11 @@ jobs:
     runs-on: macos-latest
     env:
       MACOS_CERT_BASE64: ${{ secrets.MACOS_CERT_BASE64 }}
+[[- if .MAS]]
+      MACOS_STORE_CERT_BASE64: ${{ secrets.MACOS_STORE_CERT_BASE64 }}
+      MACOS_INSTALLER_CERT_BASE64: ${{ secrets.MACOS_INSTALLER_CERT_BASE64 }}
+      MACOS_PROFILE_BASE64: ${{ secrets.MACOS_PROFILE_BASE64 }}
+[[- end]]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -544,10 +557,38 @@ jobs:
           release=""
           if [ -n "$MACOS_CERT_BASE64" ]; then release="-release"; fi
           giode build $release dmg
+[[- if .MAS]]
+      - name: Mac App Store certificates and profile
+        if: env.MACOS_STORE_CERT_BASE64 != '' && env.MACOS_INSTALLER_CERT_BASE64 != '' && env.MACOS_PROFILE_BASE64 != ''
+        env:
+          MACOS_STORE_CERT_PASS: ${{ secrets.MACOS_STORE_CERT_PASS }}
+          MACOS_INSTALLER_CERT_PASS: ${{ secrets.MACOS_INSTALLER_CERT_PASS }}
+        run: |
+          if ! security list-keychains -d user | grep -q build.keychain; then
+            security create-keychain -p ci build.keychain
+            security default-keychain -s build.keychain
+          fi
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | tr -d '"')
+          security unlock-keychain -p ci build.keychain
+          echo "$MACOS_STORE_CERT_BASE64" | base64 -d > store.p12
+          echo "$MACOS_INSTALLER_CERT_BASE64" | base64 -d > installer.p12
+          security import store.p12 -k build.keychain -P "$MACOS_STORE_CERT_PASS" -T /usr/bin/codesign
+          security import installer.p12 -k build.keychain -P "$MACOS_INSTALLER_CERT_PASS" -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          rm store.p12 installer.p12
+          echo "$MACOS_PROFILE_BASE64" | base64 -d > "$RUNNER_TEMP/store.provisionprofile"
+          echo "GIODE_MACOS_STORE_PROFILE=$RUNNER_TEMP/store.provisionprofile" >> "$GITHUB_ENV"
+      - name: Build for the Mac App Store
+        if: env.GIODE_MACOS_STORE_PROFILE != ''
+        run: giode build mas
+[[- end]]
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: dist/macos/*.dmg
+          if-no-files-found: ignore
+          path: |
+            dist/macos/*.dmg
+            dist/macos/appstore/*.pkg
 [[- end]]
 [[- if .IOS]]
 

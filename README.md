@@ -53,7 +53,7 @@ target needs.
 | `giode new [dir]` | Creates a project: a counter app in `main.go`, `go.mod` with the latest giode, `giode.toml` set up for the chosen platforms, placeholder assets (`assets/icon.png`, `assets/README.md`), `.gitignore` and a README. In a terminal it asks first: a checklist of every platform (Windows, macOS, Linux, Android, iOS, Web - whether or not this computer builds them; arrow keys move, Space checks, Enter goes on), then the name, app ID, version, module path, publisher, description and website, each with a suggestion Enter takes. `-y` skips the questions; `-platforms android,ios`, `-id`, `-name` and `-version` answer them. |
 | `giode build` (no target) | Builds for this computer's platform: `macos`, `windows` or `linux`, the same as `giode build desktop`. |
 | `giode init` | Adds `giode.toml` to an existing Go module. |
-| `giode build <target>...` | Builds into `dist/<platform>`. Targets: `android` (APK), `aab` (Play bundle), `ios` (IPA), `ios-sim`, `macos` (universal), `dmg`, `windows`, `windows-installer` (setup program), `msix`, `winget`, `linux`, `deb`, `rpm`, `appimage`, `flatpak`, `snap`, `flathub` (a Flathub submission built from source), `web`, `desktop` (this computer) and `all` (every target this computer has the tools and settings for, within `app.platforms`; it lists what it skips and why). `-release` signs with your certificates. Each step shows live as it runs, with a summary at the end. |
+| `giode build <target>...` | Builds into `dist/<platform>`. Targets: `android` (APK), `aab` (Play bundle), `ios` (IPA), `ios-sim`, `macos` (universal), `dmg`, `mas` (Mac App Store package), `windows`, `windows-installer` (setup program), `msix`, `winget`, `linux`, `deb`, `rpm`, `appimage`, `flatpak`, `snap`, `flathub` (a Flathub submission built from source), `web`, `desktop` (this computer) and `all` (every target this computer has the tools and settings for, within `app.platforms`; it lists what it skips and why). `-release` signs with your certificates. Each step shows live as it runs, with a summary at the end. |
 | `giode run [target]` | Builds for a target and runs it: `desktop` (default: `go build`, then the program), `linux`, `windows` (Wine off Windows), `windows-installer`, `macos`, `android` (builds the device's architecture, installs, launches, follows the log), `ios-sim`, `web` (serves `dist/web`). `-mcp` starts giode's MCP server so an AI agent can drive the app. |
 | `giode devices` | Lists Android devices and booted iOS simulators. |
 | `giode doctor` | Checks Go, the Android SDK, build tools, platform, NDK and JDK, Xcode, and Gio's Linux libraries, with install commands for what's missing. |
@@ -86,6 +86,7 @@ the app starts.
 | --- | --- | --- |
 | `android`, `aab` | Linux, macOS, Windows | Android SDK with build tools, a platform and the NDK; a JDK |
 | `ios`, `ios-sim`, `macos`, `dmg` | macOS | Xcode; for `ios`, a provisioning profile |
+| `mas` | macOS | Xcode; the Mac App Store profile, and the Apple Distribution and Mac installer certificates in the keychain |
 | `windows` | Linux, macOS, Windows | nothing extra for pure-Go apps (Gio doesn't need cgo on Windows); a cgo app needs a MinGW-w64 compiler and pkg-config for Windows: `windows.cc` |
 | `msix`, `winget` | Linux, macOS, Windows | nothing extra for `msix` (giode writes it); `winget` builds the setup program, so NSIS |
 | `windows-installer` | Linux, macOS, Windows | [NSIS](https://nsis.sourceforge.io) (`winget install NSIS.NSIS`, `brew install makensis`, `apt install nsis`) |
@@ -175,6 +176,14 @@ notary_pass_env = "GIODE_NOTARY_PASS"
 
 [macos.usage]
 microphone = "To dictate messages."
+
+[macos.plist]
+LSApplicationCategoryType = "public.app-category.utilities"   # the Mac App Store requires it
+
+[macos.store]                  # giode build mas
+profile = "store.provisionprofile"   # the Mac App Store profile; $GIODE_MACOS_STORE_PROFILE overrides it
+# installer_identity = "3rd Party Mac Developer Installer: Example Ltd (ABCDE12345)"  # found in the keychain by default
+entitlements = ["network.client", "network.server", "files.user-selected.read-write", "files.downloads.read-write"]
 
 [windows]
 arch = "amd64"
@@ -345,6 +354,33 @@ under a domain you control, or `io.github.<user>.<App>`. Copy the folder into th
 submission repository and check it with
 `flatpak-builder --user --install-deps-from=flathub --force-clean build <id>.json`. Libraries
 in `native.linux` aren't built from source; add them as modules before the app's.
+
+## Mac App Store
+
+`giode build mas` makes `dist/macos/appstore/<App>-<version>.pkg`, the format Transporter
+takes for the Mac App Store:
+
+- the app is signed with the certificate in the Mac App Store provisioning profile (Apple
+  Distribution), which is embedded, with its entitlements and the App Sandbox's;
+- `macos.store.entitlements` names the sandbox's (`network.client`, `network.server`,
+  `files.user-selected.read-write`, `files.downloads.read-write`, ...). With user-selected
+  files, folders the user chooses keep a bookmark, so giode reopens them after a relaunch;
+- it isn't notarized (the store reviews it instead), and has no update feed;
+- `productbuild` wraps it in a package signed with the Mac installer certificate ("3rd Party
+  Mac Developer Installer"), found in the keychain or named by
+  `macos.store.installer_identity`.
+
+The store needs a category: `LSApplicationCategoryType` in `[macos.plist]`. Context actions
+are Services in every macOS build (`NSServices`), which the sandbox allows.
+
+In `giode ci`, with `[macos.store]` set, the macOS job builds the package too when the
+repository has `MACOS_STORE_CERT_BASE64` and `MACOS_STORE_CERT_PASS` (the Apple Distribution
+.p12), `MACOS_INSTALLER_CERT_BASE64` and `MACOS_INSTALLER_CERT_PASS` (the installer .p12),
+and `MACOS_PROFILE_BASE64` (the profile). It attaches the .pkg to the release beside the
+.dmg; upload it with Transporter.
+
+`-release` builds of `macos` and `dmg` sign with `macos.identity` (Developer ID) when it's set,
+and use `macos.profile` only without it.
 
 ## Snap Store
 

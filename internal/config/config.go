@@ -249,6 +249,55 @@ type MacOS struct {
 	// Push enables push notifications, as ios.push. It needs Profile:
 	// macOS refuses the entitlement without a provisioning profile.
 	Push string `toml:"push"`
+	// Store configures Mac App Store builds (giode build mas).
+	Store MacOSStore `toml:"store"`
+}
+
+// MacOSStore configures Mac App Store builds: an app signed with the
+// Apple Distribution certificate through its provisioning profile, in
+// the App Sandbox, wrapped in a signed installer package.
+type MacOSStore struct {
+	// Profile is the Mac App Store provisioning profile
+	// (.provisionprofile); macos.profile by default, and
+	// $GIODE_MACOS_STORE_PROFILE overrides it. Its certificate,
+	// Apple Distribution, signs the app; it must be in the keychain.
+	Profile string `toml:"profile"`
+	// InstallerIdentity signs the .pkg: "3rd Party Mac Developer
+	// Installer: Name (TEAMID)" (or "Mac Installer Distribution: ...").
+	// By default, the first such identity in the keychain.
+	InstallerIdentity string `toml:"installer_identity"`
+	// Entitlements are the sandbox's: "network.client", "network.server",
+	// "files.user-selected.read-write", "files.downloads.read-write", ...
+	// (com.apple.security. is added to names without a dot-separated
+	// prefix of their own; full names work too). The sandbox itself
+	// (app-sandbox) is always on, and folders the user chooses keep
+	// their bookmarks (files.bookmarks.app-scope) when user-selected
+	// files are.
+	Entitlements []string `toml:"entitlements"`
+}
+
+// StoreEntitlements returns the Mac App Store build's sandbox
+// entitlements, all true.
+func (c *Config) StoreEntitlements() map[string]any {
+	ents := map[string]any{"com.apple.security.app-sandbox": true}
+	userSelected := false
+	for _, e := range c.MacOS.Store.Entitlements {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		if !strings.HasPrefix(e, "com.apple.") {
+			e = "com.apple.security." + e
+		}
+		ents[e] = true
+		if strings.HasPrefix(e, "com.apple.security.files.user-selected.") {
+			userSelected = true
+		}
+	}
+	if userSelected {
+		ents["com.apple.security.files.bookmarks.app-scope"] = true
+	}
+	return ents
 }
 
 // Windows configures Windows builds.
@@ -576,6 +625,9 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("GIODE_IOS_SHARE_PROFILE"); v != "" {
 		c.IOS.ShareProfile = v
+	}
+	if v := os.Getenv("GIODE_MACOS_STORE_PROFILE"); v != "" {
+		c.MacOS.Store.Profile = v
 	}
 	c.setDefaults()
 	if err := c.Validate(); err != nil {

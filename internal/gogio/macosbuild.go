@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 )
@@ -177,8 +178,10 @@ func (b *macBuilder) setInfo(buildInfo *buildInfo, name string) {
 	<string>{{.Version.VersionCode}}</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>CFBundleName</key>
+	<string>{{.Name}}</string>
 	<key>CFBundlePackageType</key>
-	<string>BNDL</string>
+	<string>APPL</string>
     {{if .Schemes}}
 	<key>CFBundleURLTypes</key>
 	<array>
@@ -202,7 +205,9 @@ func (b *macBuilder) setInfo(buildInfo *buildInfo, name string) {
 	if err := t.Execute(&manifest, manifestSrc); err != nil {
 		panic(err)
 	}
-	b.Manifest = []byte(withPlistExtras(manifest.String()))
+	// giode: giode.toml's keys replace the template's rather than
+	// follow them twice.
+	b.Manifest = []byte(withPlistExtras(withoutKeys(manifest.String(), plistKeys(extras.InfoPlist))))
 
 	b.Entitlements = []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -308,4 +313,25 @@ func dittozip(input, output string) error {
 
 	_, err := runCmd(cmd)
 	return err
+}
+
+var plistKeyRE = regexp.MustCompile(`<key>([^<]*)</key>`)
+
+// plistKeys returns the top-level keys of plist entries.
+func plistKeys(entries string) map[string]bool {
+	keys := map[string]bool{}
+	for _, m := range plistKeyRE.FindAllStringSubmatch(entries, -1) {
+		keys[m[1]] = true
+	}
+	return keys
+}
+
+// withoutKeys removes the entries of keys with a one-line value from a
+// plist.
+func withoutKeys(plist string, keys map[string]bool) string {
+	for k := range keys {
+		re := regexp.MustCompile(`\n[ \t]*<key>` + regexp.QuoteMeta(k) + `</key>\n[ \t]*(<string>[^<]*</string>|<true/>|<false/>|<integer>[^<]*</integer>)`)
+		plist = re.ReplaceAllString(plist, "")
+	}
+	return plist
 }
