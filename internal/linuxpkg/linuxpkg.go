@@ -80,18 +80,22 @@ type File struct {
 var iconSizes = []int{16, 32, 48, 64, 128, 256, 512}
 
 // Files returns the files the app installs under prefix (/usr, or /app
-// for Flatpak): the binary, desktop entry, icons and AppStream
-// metadata.
+// for Flatpak): the binary (when Binary is set), desktop entry, icons
+// and AppStream metadata.
 func Files(a App, prefix string) ([]File, error) {
-	bin, err := os.ReadFile(a.Binary)
-	if err != nil {
-		return nil, err
+	var files []File
+	// Without a binary (a Flathub build compiles it), the rest.
+	if a.Binary != "" {
+		bin, err := os.ReadFile(a.Binary)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, File{Path: prefix + "/bin/" + a.Command, Body: bin, Mode: 0o755})
 	}
-	files := []File{
-		{Path: prefix + "/bin/" + a.Command, Body: bin, Mode: 0o755},
-		{Path: prefix + "/share/applications/" + a.ID + ".desktop", Body: []byte(DesktopEntry(a)), Mode: 0o644},
-		{Path: prefix + "/share/metainfo/" + a.ID + ".metainfo.xml", Body: []byte(Metainfo(a)), Mode: 0o644},
-	}
+	files = append(files,
+		File{Path: prefix + "/share/applications/" + a.ID + ".desktop", Body: []byte(DesktopEntry(a)), Mode: 0o644},
+		File{Path: prefix + "/share/metainfo/" + a.ID + ".metainfo.xml", Body: []byte(Metainfo(a)), Mode: 0o644},
+	)
 	if a.MIMEXML != "" {
 		files = append(files, File{Path: prefix + "/share/mime/packages/" + a.ID + ".xml", Body: []byte(a.MIMEXML), Mode: 0o644})
 	}

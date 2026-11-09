@@ -1379,3 +1379,57 @@ func goCmd(dir string, args ...string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// Diff returns giode's patches to the Gio module the app in dir uses,
+// as a unified diff with a/ and b/ prefixes (patch -p1 in the module's
+// directory), and the module's version. Flathub builds use it: they
+// build from upstream sources and patch files, without the giode CLI.
+// It needs diff (GNU or BSD).
+func Diff(dir string, patches []patch) (diff, version string, err error) {
+	out, err := goCmd(dir, "list", "-m", "-json", "gioui.org")
+	if err != nil {
+		return "", "", err
+	}
+	var m module
+	if err := json.Unmarshal([]byte(out), &m); err != nil {
+		return "", "", fmt.Errorf("reading go list output: %w", err)
+	}
+	if m.Replace != nil {
+		return "", "", fmt.Errorf("%w: go.mod replaces gioui.org", ErrSkipped)
+	}
+	if m.Dir == "" {
+		if _, err := goCmd(dir, "mod", "download", "gioui.org"); err != nil {
+			return "", "", err
+		}
+		if out, err = goCmd(dir, "list", "-m", "-json", "gioui.org"); err != nil {
+			return "", "", err
+		}
+		if err := json.Unmarshal([]byte(out), &m); err != nil || m.Dir == "" {
+			return "", "", errors.New("can't find the Gio module's source")
+		}
+	}
+	patched, err := patchedCopy(m, patches)
+	if err != nil {
+		return "", "", err
+	}
+	// diff names files by the paths it's given: run it on a and b.
+	tmp, err := os.MkdirTemp("", "giode-diff-")
+	if err != nil {
+		return "", "", err
+	}
+	defer os.RemoveAll(tmp)
+	if err := os.Symlink(m.Dir, filepath.Join(tmp, "a")); err != nil {
+		return "", "", err
+	}
+	if err := os.Symlink(patched, filepath.Join(tmp, "b")); err != nil {
+		return "", "", err
+	}
+	cmd := exec.Command("diff", "-ruN", "a", "b")
+	cmd.Dir = tmp
+	b, err := cmd.Output()
+	var ee *exec.ExitError
+	if err != nil && !(errors.As(err, &ee) && ee.ExitCode() == 1) {
+		return "", "", fmt.Errorf("diff: %w", err)
+	}
+	return string(b), m.Version, nil
+}

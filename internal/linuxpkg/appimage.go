@@ -95,6 +95,18 @@ func appImageTool() (string, error) {
 // the network, and play sound.
 var defaultFlatpakPermissions = []string{"--share=ipc", "--socket=fallback-x11", "--socket=wayland", "--device=dri", "--share=network", "--socket=pulseaudio"}
 
+// FlatpakPermissions are a's finish-args: FlatpakPermissions, or a
+// desktop app's defaults.
+func FlatpakPermissions(a App) []string {
+	if len(a.FlatpakPermissions) > 0 {
+		return a.FlatpakPermissions
+	}
+	return defaultFlatpakPermissions
+}
+
+// FlatpakRuntime is the freedesktop runtime version Flatpak builds use.
+const FlatpakRuntime = "25.08"
+
 // Flatpak writes a Flatpak manifest packaging the built binary into dir,
 // with the files it installs, and builds a bundle (out) when
 // flatpak-builder is installed. It reports whether it built one.
@@ -126,7 +138,7 @@ func Flatpak(a App, dir, out string, verbose bool) (bool, error) {
 	manifest := fmt.Sprintf(`{
   "app-id": %q,
   "runtime": "org.freedesktop.Platform",
-  "runtime-version": "24.08",
+  "runtime-version": %q,
   "sdk": "org.freedesktop.Sdk",
   "command": %q,
   "finish-args": [%s],
@@ -143,7 +155,7 @@ func Flatpak(a App, dir, out string, verbose bool) (bool, error) {
     }
   ]
 }
-`, a.ID, a.Command, strings.Join(q, ", "), a.Command, strings.Join(cmds, ",\n        "), strings.Join(sources, ",\n        "))
+`, a.ID, FlatpakRuntime, a.Command, strings.Join(q, ", "), a.Command, strings.Join(cmds, ",\n        "), strings.Join(sources, ",\n        "))
 	mf := filepath.Join(dir, a.ID+".json")
 	if err := os.WriteFile(mf, []byte(manifest), 0o644); err != nil {
 		return false, err

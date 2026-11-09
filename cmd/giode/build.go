@@ -49,6 +49,8 @@ no target it builds for this computer's platform, like desktop:
 	appimage  an AppImage, with appimagetool (Linux only)
 	flatpak   a Flatpak bundle with flatpak-builder, or its manifest
 	          without it (Linux only)
+	flathub   a Flathub submission: a manifest building the app from its
+	          git tag offline, with every Go module as a source (from any OS)
 	web       a WebAssembly site (dist/web)
 	desktop   this computer's platform
 	all       every target this computer can build for app.platforms (all
@@ -147,7 +149,7 @@ func cmdBuild(args []string) error {
 }
 
 // targetNames are the targets build accepts, besides desktop and all.
-var targetNames = []string{"android", "aab", "ios", "ios-sim", "macos", "dmg", "windows", "windows-installer", "msix", "winget", "linux", "deb", "rpm", "appimage", "flatpak", "web"}
+var targetNames = []string{"android", "aab", "ios", "ios-sim", "macos", "dmg", "windows", "windows-installer", "msix", "winget", "linux", "deb", "rpm", "appimage", "flatpak", "flathub", "web"}
 
 // targetAliases are short and alternative target names.
 var targetAliases = map[string]string{
@@ -251,7 +253,7 @@ func targetPlatform(t string) string {
 		return "macos"
 	case "windows", "windows-installer", "msix", "winget":
 		return "windows"
-	case "linux", "deb", "rpm", "appimage", "flatpak":
+	case "linux", "deb", "rpm", "appimage", "flatpak", "flathub":
 		return "linux"
 	}
 	return t
@@ -337,6 +339,8 @@ func buildTargetUncached(c *config.Config, target string, o buildOpts) (string, 
 		return buildWindowsInstaller(c, o)
 	case "deb", "rpm", "appimage", "flatpak":
 		return buildLinuxPackage(c, target, o)
+	case "flathub":
+		return buildFlathub(c, o)
 	case "msix":
 		return buildMSIX(c, o)
 	case "dmg":
