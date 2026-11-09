@@ -147,6 +147,7 @@ Secrets it uses when set (Settings > Secrets and variables > Actions):
 	IOS_SHARE_PROFILE_BASE64                       iOS share extension's profile (app.share_target)
 	IOS_TEAM_ID                                    Apple team ID (ios.team_id)
 	GIODE_UPDATE_KEY                               update feed key (giode release)
+	SNAPCRAFT_STORE_CREDENTIALS                    Snap Store upload (snapcraft export-login)
 
 Without the iOS certificate and profile (and, with app.share_target, the
 share extension's profile) the iOS job builds for the simulator only.
@@ -223,6 +224,10 @@ type ciData struct {
 	// ShareTarget is app.share_target: a device build for iOS also needs
 	// the share extension's profile.
 	ShareTarget bool
+	// Snap builds a snap per Linux runner and uploads it to the Snap
+	// Store on a release (linux.snap.name set), to SnapChannel.
+	Snap        bool
+	SnapChannel string
 }
 
 func newCIData(c *config.Config) ciData {
@@ -291,11 +296,13 @@ func newCIData(c *config.Config) ciData {
 		d.Dispatch = *c.CI.Dispatch
 	}
 	d.LinuxJob = d.LinuxPkgs || d.Web || d.Android || len(d.CrossWindows) > 0
+	d.Snap = d.LinuxPkgs && c.Linux.Snap.Name != ""
+	d.SnapChannel = orDefault(c.Linux.Snap.Channel, "stable")
 	var needs []string
 	for _, j := range []struct {
 		name string
 		on   bool
-	}{{"linux", d.LinuxJob}, {"macos", d.MacOS}, {"windows", d.WindowsMSYS2}, {"ios", d.IOS}} {
+	}{{"linux", d.LinuxJob}, {"snap", d.Snap}, {"macos", d.MacOS}, {"windows", d.WindowsMSYS2}, {"ios", d.IOS}} {
 		if j.on {
 			needs = append(needs, j.name)
 		}
@@ -449,6 +456,54 @@ jobs:
             dist/android/*.apk
             dist/android/*.aab
             dist/android/native-debug-symbols.zip
+[[- end]]
+[[- if .Snap]]
+
+  snap:
+[[- if .Test]]
+    needs: test
+[[- end]]
+    strategy:
+      matrix:
+        include:[[range .Linux]]
+          - arch: [[.Arch]]
+            runner: [[.Runner]][[end]]
+    runs-on: ${{ matrix.runner }}
+    env:
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc pkg-config libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libgles2-mesa-dev libegl1-mesa-dev libffi-dev libxcursor-dev libvulkan-dev
+          go install github.com/xmhrnx/giode-cli/cmd/giode@latest
+[[- if .SetupLinux]]
+      - name: Project setup (giode.toml ci.setup)
+        run: |
+[[.SetupLinux]]
+[[- end]]
+      - name: Snap project
+        # Without snapcraft here, giode writes the project the next step
+        # packs.
+        run: giode build -arch ${{ matrix.arch }} snap
+      - uses: snapcore/action-build@v1
+        id: snapcraft
+        with:
+          path: dist/linux/snap
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snap-${{ matrix.arch }}
+          path: ${{ steps.snapcraft.outputs.snap }}
+      - name: Upload to the Snap Store
+        if: github.ref_type == 'tag' && env.SNAPCRAFT_STORE_CREDENTIALS != ''
+        uses: snapcore/action-publish@v1
+        with:
+          snap: ${{ steps.snapcraft.outputs.snap }}
+          release: [[.SnapChannel]]
 [[- end]]
 [[- if .MacOS]]
 

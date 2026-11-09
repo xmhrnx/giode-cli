@@ -194,3 +194,37 @@ func TestMetainfoScreenshots(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapProject(t *testing.T) {
+	a := testApp(t)
+	dir := t.TempDir()
+	if _, err := Snap(a, SnapOptions{Name: "hello-app", Plugs: []string{"network", "network-bind", "home"}}, dir, filepath.Join(dir, "x.snap"), false); err != nil {
+		t.Fatal(err)
+	}
+	y, err := os.ReadFile(filepath.Join(dir, "snap", "snapcraft.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"name: hello-app\n", "base: core24\n", "confinement: strict\n", "grade: stable\n",
+		"    command: bin/hello-app\n", "    common-id: com.example.hello\n", "    extensions: [gnome]\n",
+		"    plugs:\n      - network\n      - network-bind\n      - home\n", "    plugin: dump\n    source: root\n"} {
+		if !strings.Contains(string(y), w) {
+			t.Errorf("snapcraft.yaml lacks %q:\n%s", w, y)
+		}
+	}
+	d, _ := os.ReadFile(filepath.Join(dir, "snap", "gui", "hello-app.desktop"))
+	if !strings.Contains(string(d), "Icon=${SNAP}/meta/gui/hello-app.png") || !strings.Contains(string(d), "Exec=hello-app %U") {
+		t.Errorf("snap desktop entry:\n%s", d)
+	}
+	for _, f := range []string{"snap/gui/hello-app.png", "root/bin/hello-app", "root/share/metainfo/com.example.hello.metainfo.xml"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Error(err)
+		}
+	}
+	if _, err := Snap(a, SnapOptions{Name: "Hello App"}, dir, "", false); err == nil {
+		t.Error("an invalid snap name was taken")
+	}
+	if got := SnapName("Easy Send!"); got != "easy-send" {
+		t.Errorf("SnapName: %q", got)
+	}
+}

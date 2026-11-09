@@ -264,3 +264,39 @@ func TestWorkflowShareTarget(t *testing.T) {
 		}
 	}
 }
+
+// linux.snap.name adds a snap job, uploading to the Snap Store on a
+// release when the repository has the credentials.
+func TestWorkflowSnap(t *testing.T) {
+	plain := workflow(&config.Config{App: config.App{Platforms: []string{"linux"}}})
+	if strings.Contains(plain, "snapcraft") {
+		t.Error("a snap job without linux.snap.name")
+	}
+	c := &config.Config{App: config.App{Platforms: []string{"linux"}}}
+	c.Linux.Snap.Name = "easysend"
+	wf := workflow(c)
+	for _, w := range []string{
+		"\n  snap:\n",
+		"SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}",
+		"run: giode build -arch ${{ matrix.arch }} snap",
+		"uses: snapcore/action-build@v1",
+		"if: github.ref_type == 'tag' && env.SNAPCRAFT_STORE_CREDENTIALS != ''",
+		"uses: snapcore/action-publish@v1",
+		"release: stable",
+		"needs: [linux, snap]",
+	} {
+		if !strings.Contains(wf, w) {
+			t.Errorf("snap workflow lacks %q", w)
+		}
+	}
+	if placeholder.MatchString(wf) {
+		t.Errorf("a placeholder is left:\n%s", wf)
+	}
+	if py, err := exec.LookPath("python3"); err == nil {
+		cmd := exec.Command(py, "-c", "import sys, yaml; yaml.safe_load(sys.stdin)")
+		cmd.Stdin = strings.NewReader(wf)
+		if out, err := cmd.CombinedOutput(); err != nil && !strings.Contains(string(out), "No module named") {
+			t.Errorf("invalid YAML: %v\n%s", err, out)
+		}
+	}
+}

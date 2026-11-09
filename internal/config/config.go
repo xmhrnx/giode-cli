@@ -428,6 +428,25 @@ type Linux struct {
 	// them: image URLs ("https://example.com/main.png"), or tables with
 	// a url and a caption, the first being the main one.
 	Screenshots []Screenshot `toml:"screenshots"`
+	// Snap configures snaps (giode build snap) for the Snap Store.
+	Snap LinuxSnap `toml:"snap"`
+}
+
+// LinuxSnap configures snaps.
+type LinuxSnap struct {
+	// Name is the snap's registered name (snapcraft register): lower
+	// case letters, digits and hyphens; the app name made so by
+	// default. Setting it adds a snap job to giode ci's workflow.
+	Name string `toml:"name"`
+	// Plugs are the interfaces the app connects to; by default desktop,
+	// desktop-legacy, wayland, x11, opengl, network and audio-playback.
+	Plugs []string `toml:"plugs"`
+	// Grade is "stable" (default) or "devel", which only reaches the
+	// edge and beta channels.
+	Grade string `toml:"grade"`
+	// Channel is the channel giode ci's workflow releases to: stable
+	// by default.
+	Channel string `toml:"channel"`
 }
 
 // Screenshot is an AppStream screenshot: an image URL and an optional

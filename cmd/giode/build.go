@@ -49,6 +49,8 @@ no target it builds for this computer's platform, like desktop:
 	appimage  an AppImage, with appimagetool (Linux only)
 	flatpak   a Flatpak bundle with flatpak-builder, or its manifest
 	          without it (Linux only)
+	snap      a snap for the Snap Store, with snapcraft, or its project
+	          without it (Linux only)
 	flathub   a Flathub submission: a manifest building the app from its
 	          git tag offline, with every Go module as a source (from any OS)
 	web       a WebAssembly site (dist/web)
@@ -149,7 +151,7 @@ func cmdBuild(args []string) error {
 }
 
 // targetNames are the targets build accepts, besides desktop and all.
-var targetNames = []string{"android", "aab", "ios", "ios-sim", "macos", "dmg", "windows", "windows-installer", "msix", "winget", "linux", "deb", "rpm", "appimage", "flatpak", "flathub", "web"}
+var targetNames = []string{"android", "aab", "ios", "ios-sim", "macos", "dmg", "windows", "windows-installer", "msix", "winget", "linux", "deb", "rpm", "appimage", "flatpak", "flathub", "snap", "web"}
 
 // targetAliases are short and alternative target names.
 var targetAliases = map[string]string{
@@ -253,7 +255,7 @@ func targetPlatform(t string) string {
 		return "macos"
 	case "windows", "windows-installer", "msix", "winget":
 		return "windows"
-	case "linux", "deb", "rpm", "appimage", "flatpak", "flathub":
+	case "linux", "deb", "rpm", "appimage", "flatpak", "flathub", "snap":
 		return "linux"
 	}
 	return t
@@ -298,6 +300,7 @@ func buildableTargets(c *config.Config) (targets, skipped []string) {
 	add("rpm", linux, "needs Linux")
 	add("appimage", linux && has("appimagetool"), map[bool]string{true: "needs appimagetool", false: "needs Linux"}[linux])
 	add("flatpak", linux && has("flatpak-builder"), map[bool]string{true: "needs flatpak-builder", false: "needs Linux"}[linux])
+	add("snap", linux && has("snapcraft"), map[bool]string{true: "needs snapcraft", false: "needs Linux"}[linux])
 	add("web", true, "")
 	return targets, skipped
 }
@@ -337,7 +340,7 @@ func buildTargetUncached(c *config.Config, target string, o buildOpts) (string, 
 		return buildLinux(c, o)
 	case "windows-installer":
 		return buildWindowsInstaller(c, o)
-	case "deb", "rpm", "appimage", "flatpak":
+	case "deb", "rpm", "appimage", "flatpak", "snap":
 		return buildLinuxPackage(c, target, o)
 	case "flathub":
 		return buildFlathub(c, o)

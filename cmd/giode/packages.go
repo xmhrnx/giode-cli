@@ -77,6 +77,8 @@ func buildLinuxPackage(c *config.Config, kind string, o buildOpts) (string, erro
 		out = filepath.Join(dir, fmt.Sprintf("%s-%s-%s.AppImage", binaryName(c), c.App.Version, a.Arch))
 	case "flatpak":
 		out = filepath.Join(dir, fmt.Sprintf("%s-%s.flatpak", binaryName(c), c.App.Version))
+	case "snap":
+		out = filepath.Join(dir, fmt.Sprintf("%s_%s_%s.snap", snapName(c), c.App.Version, a.Arch))
 	}
 	if o.output != "" {
 		out, _ = filepath.Abs(o.output)
@@ -107,11 +109,30 @@ func buildLinuxPackage(c *config.Config, kind string, o buildOpts) (string, erro
 			progress.Logf("flatpak-builder isn't installed; wrote the manifest to %s (flatpak-builder --user --install-deps-from=flathub build %s.json)", manifestDir, c.LinuxID())
 			return filepath.Join(manifestDir, c.LinuxID()+".json"), nil
 		}
+	case "snap":
+		project := filepath.Join(dir, "snap")
+		s := c.Linux.Snap
+		built, serr := linuxpkg.Snap(a, linuxpkg.SnapOptions{Name: snapName(c), Plugs: s.Plugs, Grade: s.Grade}, project, out, verbose)
+		if serr != nil {
+			return "", serr
+		}
+		if !built {
+			progress.Logf("snapcraft isn't installed; wrote the project to %s (snapcraft pack there)", relPath(project))
+			return filepath.Join(project, "snap", "snapcraft.yaml"), nil
+		}
 	}
 	if err != nil {
 		return "", err
 	}
 	return out, nil
+}
+
+// snapName is linux.snap.name, or one made from the app's name.
+func snapName(c *config.Config) string {
+	if c.Linux.Snap.Name != "" {
+		return c.Linux.Snap.Name
+	}
+	return linuxpkg.SnapName(c.App.Name)
 }
 
 func debArch(goarch string) string {
