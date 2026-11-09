@@ -216,3 +216,18 @@ func TestBuildableTargets(t *testing.T) {
 		t.Errorf("expandTargets = %v", ts)
 	}
 }
+
+// A command's output reaches its error when nothing else took it, and a
+// notary password never does.
+func TestRunShowsOutput(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	err := run(exec.Command("sh", "-c", "echo 'hdiutil: create failed - Resource busy' >&2; exit 1", "sh", "--password", "hunter2"))
+	if err == nil {
+		t.Fatal("no error")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "Resource busy") || strings.Contains(msg, "hunter2") {
+		t.Errorf("error %q: want the command's output and no password", msg)
+	}
+}

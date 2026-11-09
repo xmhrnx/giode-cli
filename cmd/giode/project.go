@@ -74,30 +74,44 @@ func command(c *config.Config, name string, args ...string) *exec.Cmd {
 
 // run runs cmd, printing it first with -x.
 func run(cmd *exec.Cmd) error {
+	line := commandLine(cmd.Args)
 	if verbose {
-		fmt.Fprintln(os.Stderr, "+", strings.Join(cmd.Args, " "))
+		fmt.Fprintln(os.Stderr, "+", line)
 	}
-	// While the build's progress redraws the terminal, the command's
-	// output is kept, and shown only if it fails.
+	// Output nobody takes is kept and shown if the command fails: a nil
+	// Stdout or Stderr would drop it (hdiutil's, ditto's, codesign's
+	// reason for failing), and while the build's progress redraws the
+	// terminal, output meant for it is kept too.
 	var captured bytes.Buffer
-	if progress.Live() {
-		if cmd.Stdout == os.Stdout {
-			cmd.Stdout = &captured
-		}
-		if cmd.Stderr == os.Stderr {
-			cmd.Stderr = &captured
-		}
+	live := progress.Live()
+	if cmd.Stdout == nil || live && cmd.Stdout == os.Stdout {
+		cmd.Stdout = &captured
+	}
+	if cmd.Stderr == nil || live && cmd.Stderr == os.Stderr {
+		cmd.Stderr = &captured
 	}
 	done := progress.Command(cmd)
 	err := cmd.Run()
 	done(err)
 	if err != nil {
 		if out := strings.TrimSpace(captured.String()); out != "" {
-			return fmt.Errorf("%s: %w\n%s", strings.Join(cmd.Args, " "), err, out)
+			return fmt.Errorf("%s: %w\n%s", line, err, out)
 		}
-		return fmt.Errorf("%s: %w", strings.Join(cmd.Args, " "), err)
+		return fmt.Errorf("%s: %w", line, err)
 	}
 	return nil
+}
+
+// commandLine joins a command's arguments for messages, hiding the value
+// after --password.
+func commandLine(args []string) string {
+	shown := append([]string(nil), args...)
+	for i := 1; i < len(shown); i++ {
+		if shown[i-1] == "--password" {
+			shown[i] = "***"
+		}
+	}
+	return strings.Join(shown, " ")
 }
 
 // output runs cmd and returns its trimmed standard output.

@@ -249,7 +249,7 @@ func buildDMG(c *config.Config, o buildOpts) (string, error) {
 		return "", err
 	}
 	os.Remove(out)
-	if err := run(exec.Command("hdiutil", "create", "-volname", c.App.Name, "-srcfolder", stage, "-ov", "-format", "UDZO", out)); err != nil {
+	if err := createDMG(c.App.Name, stage, out); err != nil {
 		return "", err
 	}
 	if o.release && c.MacOS.Identity != "" {

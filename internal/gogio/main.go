@@ -252,8 +252,9 @@ func build(bi *buildInfo) error {
 }
 
 func runCmdRaw(cmd *exec.Cmd) ([]byte, error) {
+	line := commandLine(cmd.Args)
 	if *printCommands {
-		fmt.Printf("%s\n", strings.Join(cmd.Args, " "))
+		fmt.Printf("%s\n", line)
 	}
 	done := progress.Command(cmd)
 	out, err := cmd.Output()
@@ -262,9 +263,21 @@ func runCmdRaw(cmd *exec.Cmd) ([]byte, error) {
 		return out, nil
 	}
 	if err, ok := err.(*exec.ExitError); ok {
-		return nil, fmt.Errorf("%s failed: %s%s", strings.Join(cmd.Args, " "), out, err.Stderr)
+		return nil, fmt.Errorf("%s failed: %s%s", line, out, err.Stderr)
 	}
 	return nil, err
+}
+
+// commandLine joins a command's arguments for messages, hiding the value
+// after --password (notarytool's).
+func commandLine(args []string) string {
+	shown := append([]string(nil), args...)
+	for i := 1; i < len(shown); i++ {
+		if shown[i-1] == "--password" {
+			shown[i] = "***"
+		}
+	}
+	return strings.Join(shown, " ")
 }
 
 func runCmd(cmd *exec.Cmd) (string, error) {
