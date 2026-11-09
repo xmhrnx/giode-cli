@@ -171,3 +171,20 @@ func TestFourPartVersionAndBuild(t *testing.T) {
 		t.Error("a non-numeric fourth part was accepted")
 	}
 }
+
+func TestFirewallPorts(t *testing.T) {
+	w := WindowsInstaller{FirewallPorts: []string{"tcp:53317-53318", "UDP:53317"}}
+	got, err := w.ParseFirewallPorts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []FirewallPort{{"TCP", 53317, 53318}, {"UDP", 53317, 53317}}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	for _, bad := range []string{"53317", "icmp:1", "tcp:0", "tcp:70000", "tcp:20-10", "tcp:x"} {
+		if _, err := (WindowsInstaller{FirewallPorts: []string{bad}}).ParseFirewallPorts(); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

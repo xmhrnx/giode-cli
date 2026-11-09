@@ -55,6 +55,21 @@ type App struct {
 	// on with giode's App.SetLaunchAtLogin: a packaged app can't use
 	// the Run key.
 	StartupTask bool
+	// Firewall declares inbound Windows Firewall rules for the program:
+	// a package can't add them at install the way a setup program does.
+	// With Firewall set and no FirewallPorts, the program is allowed on
+	// every TCP and UDP port. FirewallPublic allows public networks too,
+	// not only private and domain ones.
+	Firewall       bool
+	FirewallPublic bool
+	FirewallPorts  []FirewallPort
+}
+
+// FirewallPort is an inbound rule: a protocol, "TCP" or "UDP", and a
+// local port range.
+type FirewallPort struct {
+	Protocol         string
+	PortMin, PortMax int
 }
 
 // StartupTaskID is the startup task's TaskId; giode looks it up by it.
@@ -247,12 +262,14 @@ func Manifest(a App, arch, exe string) (string, error) {
 		}
 		ext.WriteString("\n      </Extensions>")
 	}
+	pkgExt := firewallExtension(a, exe)
 	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-  IgnorableNamespaces="uap rescap desktop">
+  xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
+  IgnorableNamespaces="uap rescap desktop desktop2">
   <Identity Name="%s" Publisher="%s" Version="%s" ProcessorArchitecture="%s"/>
   <Properties>
     <DisplayName>%s</DisplayName>
@@ -275,9 +292,36 @@ func Manifest(a App, arch, exe string) (string, error) {
   </Applications>
   <Capabilities>
     <rescap:Capability Name="runFullTrust"/>
-  </Capabilities>
+  </Capabilities>%s
 </Package>
-`, e(name), e(publisher), version, arch, e(a.Name), e(display), e(exe), e(a.Name), e(desc), ext.String()), nil
+`, e(name), e(publisher), version, arch, e(a.Name), e(display), e(exe), e(a.Name), e(desc), ext.String(), pkgExt), nil
+}
+
+// firewallExtension is the package's windows.firewallRules extension,
+// or "" without Firewall.
+func firewallExtension(a App, exe string) string {
+	if !a.Firewall && len(a.FirewallPorts) == 0 {
+		return ""
+	}
+	profile := "domainAndPrivate"
+	if a.FirewallPublic {
+		profile = "all"
+	}
+	ports := a.FirewallPorts
+	if len(ports) == 0 {
+		ports = []FirewallPort{{Protocol: "TCP"}, {Protocol: "UDP"}}
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n  <Extensions>\n    <desktop2:Extension Category=\"windows.firewallRules\">\n      <desktop2:FirewallRules Executable=\"%s\">", html.EscapeString(exe))
+	for _, p := range ports {
+		fmt.Fprintf(&b, "\n        <desktop2:Rule Direction=\"in\" IPProtocol=\"%s\"", p.Protocol)
+		if p.PortMin > 0 {
+			fmt.Fprintf(&b, " LocalPortMin=\"%d\" LocalPortMax=\"%d\"", p.PortMin, max(p.PortMax, p.PortMin))
+		}
+		fmt.Fprintf(&b, " Profile=\"%s\"/>", profile)
+	}
+	b.WriteString("\n      </desktop2:FirewallRules>\n    </desktop2:Extension>\n  </Extensions>")
+	return b.String()
 }
 
 // logo renders the icon as a square logo of size, or a 310x150 wide

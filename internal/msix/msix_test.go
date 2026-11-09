@@ -134,7 +134,7 @@ func TestManifest_StartupTask(t *testing.T) {
 	if err := xml.Unmarshal([]byte(m), new(struct{})); err != nil {
 		t.Fatalf("manifest isn't XML: %v\n%s", err, m)
 	}
-	for _, w := range []string{`IgnorableNamespaces="uap rescap desktop"`, `<desktop:Extension Category="windows.startupTask" Executable="Agent.exe" EntryPoint="Windows.FullTrustApplication">`,
+	for _, w := range []string{`IgnorableNamespaces="uap rescap desktop desktop2"`, `<desktop:Extension Category="windows.startupTask" Executable="Agent.exe" EntryPoint="Windows.FullTrustApplication">`,
 		`<desktop:StartupTask TaskId="GiodeLaunchAtLogin" Enabled="false" DisplayName="Agent"/>`} {
 		if !strings.Contains(m, w) {
 			t.Errorf("lacks %s:\n%s", w, m)
@@ -154,6 +154,45 @@ func TestManifest_FileTypes(t *testing.T) {
 	for _, w := range []string{`Category="windows.fileTypeAssociation"`, `<uap:FileTypeAssociation Name="mkv">`, `<uap:FileType>.mk3d</uap:FileType>`} {
 		if !strings.Contains(m, w) {
 			t.Errorf("lacks %s:\n%s", w, m)
+		}
+	}
+}
+
+func TestManifest_Firewall(t *testing.T) {
+	a := App{Name: "Easy Send", IdentityName: "app.easysend", Publisher: "CN=Example", Version: "1.0.0"}
+	m, _ := Manifest(a, "x64", "EasySend.exe")
+	if strings.Contains(m, "firewallRules") {
+		t.Error("a firewall rule without Firewall")
+	}
+	a.Firewall = true
+	a.FirewallPorts = []FirewallPort{{"TCP", 53317, 53318}, {"UDP", 53317, 53317}}
+	m, err := Manifest(a, "x64", "EasySend.exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := xml.Unmarshal([]byte(m), new(struct{})); err != nil {
+		t.Fatalf("manifest isn't XML: %v\n%s", err, m)
+	}
+	for _, w := range []string{
+		`<desktop2:Extension Category="windows.firewallRules">`,
+		`<desktop2:FirewallRules Executable="EasySend.exe">`,
+		`<desktop2:Rule Direction="in" IPProtocol="TCP" LocalPortMin="53317" LocalPortMax="53318" Profile="domainAndPrivate"/>`,
+		`<desktop2:Rule Direction="in" IPProtocol="UDP" LocalPortMin="53317" LocalPortMax="53317" Profile="domainAndPrivate"/>`,
+	} {
+		if !strings.Contains(m, w) {
+			t.Errorf("lacks %s:\n%s", w, m)
+		}
+	}
+	// The package's extensions follow its capabilities, outside the app.
+	if strings.Index(m, "firewallRules") < strings.Index(m, "</Applications>") {
+		t.Errorf("the firewall rules are inside the application:\n%s", m)
+	}
+
+	a.FirewallPorts, a.FirewallPublic = nil, true
+	m, _ = Manifest(a, "x64", "EasySend.exe")
+	for _, w := range []string{`IPProtocol="TCP" Profile="all"/>`, `IPProtocol="UDP" Profile="all"/>`} {
+		if !strings.Contains(m, w) {
+			t.Errorf("every port, public too: lacks %s:\n%s", w, m)
 		}
 	}
 }

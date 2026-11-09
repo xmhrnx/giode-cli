@@ -155,11 +155,21 @@ func buildMSIX(c *config.Config, o buildOpts) (string, error) {
 	for _, ft := range c.WindowsFileTypes() {
 		msixTypes = append(msixTypes, msix.FileType{Name: strings.TrimPrefix(ft.Extensions[0], "."), DisplayName: ft.Name, Extensions: ft.Extensions})
 	}
+	inst := c.Windows.Installer
+	ports, err := inst.ParseFirewallPorts()
+	if err != nil {
+		return "", err
+	}
+	var msixPorts []msix.FirewallPort
+	for _, p := range ports {
+		msixPorts = append(msixPorts, msix.FirewallPort{Protocol: p.Protocol, PortMin: p.PortMin, PortMax: p.PortMax})
+	}
 	done := progress.Begin("Packing the MSIX")
 	err = msix.Write(msix.App{
 		Name: c.App.Name, IdentityName: name, Publisher: m.Publisher, PublisherDisplayName: display,
 		Description: c.App.Description, Version: c.App.Version, Exe: exe, Icon: c.Path(c.App.Icon),
 		Arch: arch, Protocols: protocols, Files: dlls, FileTypes: msixTypes, StartupTask: m.StartupTask,
+		Firewall: inst.Firewall, FirewallPublic: inst.FirewallPublic, FirewallPorts: msixPorts,
 	}, out)
 	done(err)
 	if err != nil {

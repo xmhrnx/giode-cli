@@ -341,6 +341,43 @@ type WindowsInstaller struct {
 	// to. Per-user installs ask for administrator rights for this step.
 	Firewall       bool `toml:"firewall"`
 	FirewallPublic bool `toml:"firewall_public"`
+	// FirewallPorts limits the MSIX package's rule to these inbound
+	// ports: "tcp:53317-53318", "udp:53317". Without them it allows the
+	// app on every port, as the setup program's rule does. An MSIX
+	// package can't add a rule at install the way the setup program
+	// does: it declares them in its manifest, which Firewall (or these
+	// ports) turns on.
+	FirewallPorts []string `toml:"firewall_ports"`
+}
+
+// FirewallPort is an inbound port range of WindowsInstaller.FirewallPorts.
+type FirewallPort struct {
+	Protocol         string // "TCP" or "UDP"
+	PortMin, PortMax int
+}
+
+// ParseFirewallPorts parses FirewallPorts.
+func (w WindowsInstaller) ParseFirewallPorts() ([]FirewallPort, error) {
+	var out []FirewallPort
+	for _, s := range w.FirewallPorts {
+		proto, ports, ok := strings.Cut(strings.TrimSpace(s), ":")
+		proto = strings.ToUpper(proto)
+		if !ok || (proto != "TCP" && proto != "UDP") {
+			return nil, fmt.Errorf("windows.installer.firewall_ports: %q isn't \"tcp:PORT\" or \"udp:FIRST-LAST\"", s)
+		}
+		lo, hi, ranged := strings.Cut(ports, "-")
+		min, err1 := strconv.Atoi(strings.TrimSpace(lo))
+		max := min
+		var err2 error
+		if ranged {
+			max, err2 = strconv.Atoi(strings.TrimSpace(hi))
+		}
+		if err1 != nil || err2 != nil || min < 1 || max > 65535 || max < min {
+			return nil, fmt.Errorf("windows.installer.firewall_ports: %q has no valid port or range", s)
+		}
+		out = append(out, FirewallPort{Protocol: proto, PortMin: min, PortMax: max})
+	}
+	return out, nil
 }
 
 // Update configures the giode update package for desktop builds.
@@ -547,6 +584,9 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Errorf("ios.app_group %q must look like group.com.example.app", g))
 	}
 	errs = append(errs, c.validateContextActions()...)
+	if _, err := c.Windows.Installer.ParseFirewallPorts(); err != nil {
+		errs = append(errs, err)
+	}
 	errs = append(errs, c.validateFileTypes()...)
 	if _, err := c.ParseLinks(); err != nil {
 		errs = append(errs, err)
