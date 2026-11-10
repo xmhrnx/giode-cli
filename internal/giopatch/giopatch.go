@@ -27,7 +27,7 @@ type patch struct {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "9"
+const revision = "10"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -1220,10 +1220,14 @@ package app
 import (
 	"syscall"
 	"unsafe"
+
+	gowindows "golang.org/x/sys/windows"
 )
 
 var (
-	giodeUser32           = syscall.NewLazyDLL("user32.dll")
+	giodeDwmapi                = gowindows.NewLazySystemDLL("dwmapi.dll")
+	giodeDwmSetWindowAttribute = giodeDwmapi.NewProc("DwmSetWindowAttribute")
+	giodeUser32                = syscall.NewLazyDLL("user32.dll")
 	giodeGDI32            = syscall.NewLazyDLL("gdi32.dll")
 	giodeGetClientRect    = giodeUser32.NewProc("GetClientRect")
 	giodeFillRect         = giodeUser32.NewProc("FillRect")
@@ -1247,7 +1251,37 @@ func giodeEraseBackground(hwnd, hdc uintptr) {
 	giodeFillRect.Call(hdc, uintptr(unsafe.Pointer(&r)), brush)
 	giodeDeleteObject.Call(brush)
 }
+
+// giodeDarkFrame gives a window without Windows' decorations a dark
+// system frame when GiodeSetBackground's color is dark, so what shows of
+// the frame before the first frame isn't white.
+func giodeDarkFrame(hwnd uintptr) {
+	c := giodeBackground.Load()
+	if c == 0 {
+		return
+	}
+	r, g, b := c&0xff, c>>8&0xff, c>>16&0xff
+	var dark int32
+	if 299*r+587*g+114*b < 128*1000 {
+		dark = 1
+	}
+	const dwmwaUseImmersiveDarkMode = 20 // Windows 10 20H1 on; fails harmlessly before.
+	giodeDwmSetWindowAttribute.Call(hwnd, dwmwaUseImmersiveDarkMode, uintptr(unsafe.Pointer(&dark)), unsafe.Sizeof(dark))
+}
 `,
+	},
+	{
+		file: "app/os_windows.go",
+		old: `			// Enable drop shadows when we draw decorations.
+			windows.DwmExtendFrameIntoClientArea(w.hwnd, windows.Margins{-1, -1, -1, -1})`,
+		new: `			// Enable drop shadows when we draw decorations.
+			// giode: by one pixel, rather than -1, the whole window:
+			// that made the whole window Windows' frame, white with
+			// caption buttons, over which the background erase's GDI
+			// fill (alpha 0) doesn't show until the first frame. One
+			// pixel keeps the shadow and rounded corners.
+			windows.DwmExtendFrameIntoClientArea(w.hwnd, windows.Margins{1, 1, 1, 1})
+			giodeDarkFrame(uintptr(w.hwnd))`,
 	},
 	{
 		file: "app/os_windows.go",

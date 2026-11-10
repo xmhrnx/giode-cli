@@ -58,6 +58,11 @@ func TestPrepare(t *testing.T) {
 	if err != nil || !strings.Contains(string(win), "giodeEraseBackground(uintptr(hwnd), wParam)") {
 		t.Errorf("os_windows.go doesn't fill the background before the first frame (%v)", err)
 	}
+	for _, want := range []string{"windows.Margins{1, 1, 1, 1}", "giodeDarkFrame(uintptr(w.hwnd))"} {
+		if !strings.Contains(string(win), want) {
+			t.Errorf("os_windows.go lacks %q", want)
+		}
+	}
 	for _, want := range []string{"giode: ask for the next frame", "func snippetsAgree"} {
 		if !strings.Contains(string(src), want) {
 			t.Errorf("os_android.go lacks %q", want)
