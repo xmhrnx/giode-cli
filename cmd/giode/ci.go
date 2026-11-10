@@ -213,6 +213,9 @@ type ciData struct {
 	WindowsMSYS2                   bool
 	SetupLinux, SetupMac, SetupWin string
 	Needs                          string
+	// PublishIf is the publish job's condition: a failed snap job
+	// (the Snap Store can be slow) doesn't hold back the release.
+	PublishIf string
 
 	// Release builds when a GitHub release is published, rather than
 	// on a pushed tag.
@@ -316,6 +319,16 @@ func newCIData(c *config.Config) ciData {
 		}
 	}
 	d.Needs = strings.Join(needs, ", ")
+	d.PublishIf = "github.ref_type == 'tag'"
+	if d.Snap {
+		conds := []string{"!cancelled()", d.PublishIf}
+		for _, n := range needs {
+			if n != "snap" {
+				conds = append(conds, "needs."+n+".result == 'success'")
+			}
+		}
+		d.PublishIf = "${{ " + strings.Join(conds, " && ") + " }}"
+	}
 	return d
 }
 
@@ -480,7 +493,9 @@ jobs:
             # snapcraft builds against Ubuntu 24.04 (core24).
             runner: [[if eq .Runner "ubuntu-latest"]]ubuntu-24.04[[else]][[.Runner]][[end]][[end]]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    # The Snap Store can be slow; a failed snap doesn't hold back the
+    # release (see publish).
+    timeout-minutes: 120
     env:
       SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
     steps:
@@ -502,10 +517,15 @@ jobs:
         # Without snapcraft here, giode writes the project the next step
         # packs.
         run: giode build -arch ${{ matrix.arch }} snap
-      - uses: snapcore/action-build@v1
+      - name: Pack the snap
         id: snapcraft
-        with:
-          path: dist/linux/snap
+        # On the runner itself (Ubuntu 24.04, as core24), without
+        # snapcraft's build container.
+        working-directory: dist/linux/snap
+        run: |
+          sudo snap install snapcraft --classic
+          sudo snapcraft pack --destructive-mode
+          echo "snap=$PWD/$(ls -1 *.snap | head -n 1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: snap-${{ matrix.arch }}
@@ -734,7 +754,7 @@ jobs:
 
   publish:
     needs: [[printf "[%s]" .Needs]]
-    if: github.ref_type == 'tag'
+    if: [[.PublishIf]]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

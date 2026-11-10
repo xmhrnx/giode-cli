@@ -280,12 +280,14 @@ func TestWorkflowSnap(t *testing.T) {
 		"\n  snap:\n",
 		"SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}",
 		"run: giode build -arch ${{ matrix.arch }} snap",
-		"uses: snapcore/action-build@v1",
+		"sudo snapcraft pack --destructive-mode",
 		"if: github.ref_type == 'tag' && env.SNAPCRAFT_STORE_CREDENTIALS != ''",
 		"uses: snapcore/action-publish@v1",
 		"release: stable",
 		"needs: [linux, snap]",
-		"runner: ubuntu-24.04\n    runs-on: ${{ matrix.runner }}\n    timeout-minutes: 60",
+		"runner: ubuntu-24.04\n    runs-on: ${{ matrix.runner }}",
+		"timeout-minutes: 120",
+		"if: ${{ !cancelled() && github.ref_type == 'tag' && needs.linux.result == 'success' }}",
 	} {
 		if !strings.Contains(wf, w) {
 			t.Errorf("snap workflow lacks %q", w)
