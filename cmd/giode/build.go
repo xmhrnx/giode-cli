@@ -17,6 +17,7 @@ import (
 	_ "image/jpeg"
 
 	"github.com/xmhrnx/giode-cli/internal/config"
+	"github.com/xmhrnx/giode-cli/internal/giopatch"
 	"github.com/xmhrnx/giode-cli/internal/gogio"
 	"github.com/xmhrnx/giode-cli/internal/installer"
 	"github.com/xmhrnx/giode-cli/internal/progress"
@@ -378,6 +379,10 @@ func buildTargetUncached(c *config.Config, target string, o buildOpts) (string, 
 	}
 	defer gb.cleanup()
 	g.ModFile, g.Tags = gb.modfile, gb.tags
+	if g.Simulator {
+		// The simulator's Metal shaders, on Apple silicon too.
+		g.Tags = addTag(g.Tags, giopatch.TagIOSSimulator)
+	}
 	if target == "macos" || target == "mas-app" {
 		g.MacBundle = macBundleLibs(c)
 	}

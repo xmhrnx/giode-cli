@@ -16,18 +16,34 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
-// patch replaces old with new in a file of the Gio module, or, with
-// old empty, adds the file with new as its content.
+// patch replaces old with new in a file of the Gio module (or, with
+// module set, of that module, such as gioui.org/shader), or, with old
+// empty, adds the file with new as its content. With all set it
+// replaces every occurrence of old, of which there must be one at
+// least; otherwise there must be exactly one.
 type patch struct {
 	file, old, new string
+	module         string
+	all            bool
+}
+
+// gioModule is the module patches are for when they don't name one.
+const gioModule = "gioui.org"
+
+func (p patch) modulePath() string {
+	if p.module == "" {
+		return gioModule
+	}
+	return p.module
 }
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "10"
+const revision = "11"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -1179,7 +1195,7 @@ var Android = append(append([]patch{}, androidPacing...), androidKeyRepeat...)
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
-var All = append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...)
+var All = append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...)
 
 // windowsBackground fills a new Windows window with the app's background
 // color until its first frame: Gio skips the window's background erase,
@@ -1297,6 +1313,43 @@ func giodeDarkFrame(hwnd uintptr) {
 	},
 }
 
+// iosSimulatorShaders makes Gio's shaders pick their simulator Metal
+// libraries in simulator builds on any architecture: gioui.org/shader
+// takes amd64 for the simulator, and the arm64 simulator of Apple
+// silicon Macs got the device's libraries, which Metal refuses ("Target
+// OS is incompatible"). Simulator builds have the TagIOSSimulator tag.
+var iosSimulatorShaders = append(shaderSimulator("gio"), shaderSimulator("piet")...)
+
+func shaderSimulator(pkg string) []patch {
+	return []patch{
+		{module: "gioui.org/shader", file: pkg + "/giode_simulator.go", new: `// Added by giode's Gio patches: simulator builds use the simulator's
+// Metal libraries, on Apple silicon too.
+
+//go:build giode_iossimulator
+
+package ` + pkg + `
+
+const giodeIOSSimulator = true
+`},
+		{module: "gioui.org/shader", file: pkg + "/giode_device.go", new: `// Added by giode's Gio patches: simulator builds use the simulator's
+// Metal libraries, on Apple silicon too.
+
+//go:build !giode_iossimulator
+
+package ` + pkg + `
+
+const giodeIOSSimulator = false
+`},
+		{module: "gioui.org/shader", file: pkg + "/shaders.go", all: true,
+			old: `if runtime.GOARCH == "amd64" {`,
+			new: `if runtime.GOARCH == "amd64" || giodeIOSSimulator {`},
+	}
+}
+
+// TagIOSSimulator is the build tag of iOS simulator builds, with which
+// the patched shaders use the simulator's Metal libraries.
+const TagIOSSimulator = "giode_iossimulator"
+
 // Tag is the build tag of builds against patched Gio, which giode uses
 // to reach the patches' hooks.
 const Tag = "giode_gio"
@@ -1338,31 +1391,23 @@ func Prepare(dir string, patches []patch) (modfile string, cleanup func(), err e
 	if gomodPath == "" || gomodPath == os.DevNull {
 		return "", nil, fmt.Errorf("%w: %s isn't built in module mode", ErrSkipped, dir)
 	}
-	out, err := goCmd(dir, "list", "-m", "-json", "gioui.org")
-	if err != nil {
-		return "", nil, err
-	}
-	var m module
-	if err := json.Unmarshal([]byte(out), &m); err != nil {
-		return "", nil, fmt.Errorf("reading go list output: %w", err)
-	}
-	if m.Replace != nil {
-		return "", nil, fmt.Errorf("%w: go.mod replaces gioui.org", ErrSkipped)
-	}
-	if m.Dir == "" {
-		if _, err := goCmd(dir, "mod", "download", "gioui.org"); err != nil {
+	var replaces []string
+	for _, path := range modulePaths(patches) {
+		m, err := findModule(dir, path)
+		if err != nil {
+			if path != gioModule && errors.Is(err, ErrSkipped) {
+				continue // the module's own patches only
+			}
 			return "", nil, err
 		}
-		if out, err = goCmd(dir, "list", "-m", "-json", "gioui.org"); err != nil {
+		patched, err := patchedCopy(m, modulePatches(patches, path))
+		if err != nil {
+			if path != gioModule && errors.Is(err, ErrSkipped) {
+				continue // a version these patches don't fit
+			}
 			return "", nil, err
 		}
-		if err := json.Unmarshal([]byte(out), &m); err != nil || m.Dir == "" {
-			return "", nil, errors.New("can't find the Gio module's source")
-		}
-	}
-	patched, err := patchedCopy(m, patches)
-	if err != nil {
-		return "", nil, err
+		replaces = append(replaces, fmt.Sprintf("replace %s => %s\n", path, quote(patched)))
 	}
 
 	tmp, err := os.MkdirTemp("", "giode-mod-")
@@ -1376,7 +1421,7 @@ func Prepare(dir string, patches []patch) (modfile string, cleanup func(), err e
 		cleanup()
 		return "", nil, err
 	}
-	gomod = append(gomod, fmt.Sprintf("\n// Added by giode for this build.\nreplace gioui.org => %s\n", quote(patched))...)
+	gomod = append(gomod, "\n// Added by giode for this build.\n"+strings.Join(replaces, "")...)
 	modfile = filepath.Join(tmp, "go.mod")
 	if err := os.WriteFile(modfile, gomod, 0o644); err != nil {
 		cleanup()
@@ -1398,7 +1443,12 @@ func patchedCopy(m module, patches []patch) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dst := filepath.Join(cache, "giode", "gio", m.Version+"-giode"+revision)
+	name := "gio"
+	if m.Path != "" && m.Path != gioModule {
+		// gioui.org/shader is gio-shader.
+		name = "gio-" + strings.ReplaceAll(strings.TrimPrefix(m.Path, gioModule+"/"), "/", "-")
+	}
+	dst := filepath.Join(cache, "giode", name, m.Version+"-giode"+revision)
 	if _, err := os.Stat(filepath.Join(dst, "go.mod")); err == nil {
 		return dst, nil
 	}
@@ -1414,7 +1464,7 @@ func patchedCopy(m module, patches []patch) (string, error) {
 		return "", err
 	}
 	if err := apply(tmp, patches); err != nil {
-		return "", fmt.Errorf("Gio %s: %w", m.Version, err)
+		return "", fmt.Errorf("%s %s: %w", m.Path, m.Version, err)
 	}
 	if err := os.Rename(tmp, dst); err != nil {
 		if _, serr := os.Stat(filepath.Join(dst, "go.mod")); serr == nil {
@@ -1443,10 +1493,11 @@ func apply(dir string, patches []patch) error {
 			return err
 		}
 		s := string(b)
-		if strings.Count(s, p.old) != 1 {
+		n := strings.Count(s, p.old)
+		if n == 0 || (n != 1 && !p.all) {
 			return fmt.Errorf("%w: %s doesn't have the code the patch expects", ErrSkipped, p.file)
 		}
-		s = strings.Replace(s, p.old, p.new, 1)
+		s = strings.ReplaceAll(s, p.old, p.new)
 		if err := os.WriteFile(file, []byte(s), 0o644); err != nil {
 			return err
 		}
@@ -1501,35 +1552,19 @@ func goCmd(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// Diff returns giode's patches to the Gio module the app in dir uses,
+// Diff returns giode's patches to the Gio module the app in dir uses
+// (not those to other modules, which the platforms Flathub builds for
+// don't need),
 // as a unified diff with a/ and b/ prefixes (patch -p1 in the module's
 // directory), and the module's version. Flathub builds use it: they
 // build from upstream sources and patch files, without the giode CLI.
 // It needs diff (GNU or BSD).
 func Diff(dir string, patches []patch) (diff, version string, err error) {
-	out, err := goCmd(dir, "list", "-m", "-json", "gioui.org")
+	m, err := findModule(dir, gioModule)
 	if err != nil {
 		return "", "", err
 	}
-	var m module
-	if err := json.Unmarshal([]byte(out), &m); err != nil {
-		return "", "", fmt.Errorf("reading go list output: %w", err)
-	}
-	if m.Replace != nil {
-		return "", "", fmt.Errorf("%w: go.mod replaces gioui.org", ErrSkipped)
-	}
-	if m.Dir == "" {
-		if _, err := goCmd(dir, "mod", "download", "gioui.org"); err != nil {
-			return "", "", err
-		}
-		if out, err = goCmd(dir, "list", "-m", "-json", "gioui.org"); err != nil {
-			return "", "", err
-		}
-		if err := json.Unmarshal([]byte(out), &m); err != nil || m.Dir == "" {
-			return "", "", errors.New("can't find the Gio module's source")
-		}
-	}
-	patched, err := patchedCopy(m, patches)
+	patched, err := patchedCopy(m, modulePatches(patches, gioModule))
 	if err != nil {
 		return "", "", err
 	}
@@ -1553,4 +1588,55 @@ func Diff(dir string, patches []patch) (diff, version string, err error) {
 		return "", "", fmt.Errorf("diff: %w", err)
 	}
 	return string(b), m.Version, nil
+}
+
+// modulePaths lists the modules patches are for, Gio first.
+func modulePaths(patches []patch) []string {
+	paths := []string{gioModule}
+	for _, p := range patches {
+		if path := p.modulePath(); !slices.Contains(paths, path) {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+// modulePatches are the patches for the module path.
+func modulePatches(patches []patch, path string) []patch {
+	var ps []patch
+	for _, p := range patches {
+		if p.modulePath() == path {
+			ps = append(ps, p)
+		}
+	}
+	return ps
+}
+
+// findModule finds the module path the app in dir uses, downloading it
+// when it isn't in the module cache. It returns an error wrapping
+// ErrSkipped when go.mod replaces it.
+func findModule(dir, path string) (module, error) {
+	var m module
+	out, err := goCmd(dir, "list", "-m", "-json", path)
+	if err != nil {
+		return m, err
+	}
+	if err := json.Unmarshal([]byte(out), &m); err != nil {
+		return m, fmt.Errorf("reading go list output: %w", err)
+	}
+	if m.Replace != nil {
+		return m, fmt.Errorf("%w: go.mod replaces %s", ErrSkipped, path)
+	}
+	if m.Dir == "" {
+		if _, err := goCmd(dir, "mod", "download", path); err != nil {
+			return m, err
+		}
+		if out, err = goCmd(dir, "list", "-m", "-json", path); err != nil {
+			return m, err
+		}
+		if err := json.Unmarshal([]byte(out), &m); err != nil || m.Dir == "" {
+			return m, fmt.Errorf("can't find the source of %s", path)
+		}
+	}
+	return m, nil
 }

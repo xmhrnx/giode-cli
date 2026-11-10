@@ -71,6 +71,31 @@ func TestPrepare(t *testing.T) {
 	if _, err := parser.ParseFile(token.NewFileSet(), "os_android.go", src, 0); err != nil {
 		t.Errorf("patched os_android.go doesn't parse: %v", err)
 	}
+	// gioui.org/shader picks the simulator's Metal libraries in
+	// simulator builds on any architecture.
+	cmd = exec.Command("go", "list", "-modfile="+modfile, "-f", "{{.Dir}}", "gioui.org/shader/gio")
+	cmd.Dir = app
+	out, err = cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	shaderDir := strings.TrimSpace(string(out))
+	if !strings.Contains(shaderDir, filepath.Join("giode", "gio-shader")) {
+		t.Fatalf("gioui.org/shader/gio resolved to %s, not the patched copy", shaderDir)
+	}
+	shaders, err := os.ReadFile(filepath.Join(shaderDir, "shaders.go"))
+	if err != nil || !strings.Contains(string(shaders), `runtime.GOARCH == "amd64" || giodeIOSSimulator`) || strings.Contains(string(shaders), "if runtime.GOARCH == \"amd64\" {") {
+		t.Errorf("gioui.org/shader/gio doesn't pick the simulator's libraries by tag (%v)", err)
+	}
+	for _, tags := range []string{"", TagIOSSimulator} {
+		cmd = exec.Command("go", "build", "-modfile="+modfile, "-tags="+tags, "gioui.org/shader/gio")
+		cmd.Dir = app
+		cmd.Env = append(os.Environ(), "GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=0")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Errorf("the patched shaders don't build with tags %q: %v\n%s", tags, err, out)
+		}
+	}
+
 	if _, err := os.Stat(filepath.Join(app, "go.mod")); err != nil {
 		t.Error(err)
 	}
