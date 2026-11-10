@@ -241,11 +241,15 @@ type MacOS struct {
 	Plist map[string]any    `toml:"plist"`
 	// Identity is the signing identity in the keychain ("Developer ID
 	// Application: Name (TEAMID)") release builds are signed with, or
-	// Profile a .provisionprofile for App Store builds.
+	// Profile a .provisionprofile for App Store builds. Without either,
+	// release builds use the keychain's Developer ID Application
+	// identity when there's one; $GIODE_MACOS_IDENTITY overrides it.
 	Identity string `toml:"identity"`
 	Profile  string `toml:"profile"`
 	// Notarization, with the app-specific password read from
-	// NotaryPassEnv (GIODE_NOTARY_PASS by default).
+	// NotaryPassEnv (GIODE_NOTARY_PASS by default); $GIODE_NOTARY_ID and
+	// $GIODE_NOTARY_TEAM_ID override the Apple ID and team, which is
+	// otherwise the identity's.
 	NotaryID      string `toml:"notary_id"`
 	NotaryTeamID  string `toml:"notary_team_id"`
 	NotaryPassEnv string `toml:"notary_pass_env"`
@@ -631,6 +635,15 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("GIODE_MACOS_STORE_PROFILE"); v != "" {
 		c.MacOS.Store.Profile = v
+	}
+	if v := os.Getenv("GIODE_MACOS_IDENTITY"); v != "" {
+		c.MacOS.Identity = v
+	}
+	if v := os.Getenv("GIODE_NOTARY_ID"); v != "" {
+		c.MacOS.NotaryID = v
+	}
+	if v := os.Getenv("GIODE_NOTARY_TEAM_ID"); v != "" {
+		c.MacOS.NotaryTeamID = v
 	}
 	c.setDefaults()
 	if err := c.Validate(); err != nil {

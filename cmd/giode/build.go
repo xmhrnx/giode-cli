@@ -630,6 +630,15 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 			break
 		}
 		if o.release {
+			if c.MacOS.Identity == "" && c.MacOS.Profile == "" {
+				if id := developerIDIdentity(); id != "" {
+					progress.Logf("signing with %s from the keychain (macos.identity isn't set)", id)
+					c.MacOS.Identity = id
+				}
+			}
+			if c.MacOS.NotaryID != "" && c.MacOS.NotaryTeamID == "" {
+				c.MacOS.NotaryTeamID = identityTeam(c.MacOS.Identity)
+			}
 			switch {
 			case c.MacOS.Identity != "":
 				// Developer ID, for the .app and .dmg people download.
@@ -639,9 +648,15 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 			default:
 				progress.Logf("the app is unsigned; set macos.identity in giode.toml so Gatekeeper lets it open")
 			}
+			if c.MacOS.NotaryID == "" && g.SignKey != "" {
+				progress.Logf("the app is signed but not notarized: macOS won't open it once downloaded; set macos.notary_id (or $GIODE_NOTARY_ID) and $%s", c.MacOS.NotaryPassEnv)
+			}
 			if c.MacOS.NotaryID != "" {
 				if g.SignKey == "" {
 					return g, errors.New("notarizing needs a signed app: set macos.identity")
+				}
+				if c.MacOS.NotaryTeamID == "" {
+					return g, errors.New("notarizing needs the team ID: set macos.notary_team_id (or $GIODE_NOTARY_TEAM_ID)")
 				}
 				g.NotaryID, g.NotaryTeamID = c.MacOS.NotaryID, c.MacOS.NotaryTeamID
 				g.NotaryPass = os.Getenv(c.MacOS.NotaryPassEnv)

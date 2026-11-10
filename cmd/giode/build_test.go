@@ -335,6 +335,8 @@ func TestWorkflowMAS(t *testing.T) {
 		`echo "GIODE_MACOS_STORE_PROFILE=$RUNNER_TEMP/store.provisionprofile" >> "$GITHUB_ENV"`,
 		"if: env.GIODE_MACOS_STORE_PROFILE != ''\n        run: giode build mas",
 		"dist/macos/appstore/*.pkg",
+		"GIODE_NOTARY_ID: ${{ secrets.GIODE_NOTARY_ID }}",
+		"GIODE_NOTARY_TEAM_ID: ${{ secrets.GIODE_NOTARY_TEAM_ID }}",
 		`-P "$MACOS_STORE_CERT_PASS" -T /usr/bin/codesign -T /usr/bin/productbuild`,
 		`-P "$MACOS_INSTALLER_CERT_PASS" -T /usr/bin/codesign -T /usr/bin/productbuild`,
 		"runs-on: macos-latest\n    # A hung signing step fails in an hour rather than GitHub's six.\n    timeout-minutes: 60",

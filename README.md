@@ -300,7 +300,7 @@ rest are unsigned.
 | --- | --- | --- |
 | Android | `android.keystore` | `GIODE_KEYSTORE_PASS=... giode keystore` creates one. Keep it and its password safe: Google Play only accepts updates signed with it (with Play App Signing, it's your upload key). |
 | Windows | `windows.signing`: an Authenticode `.pfx`, or a `command` | Signs the executable and the setup program, with a timestamp so signatures outlive the certificate. Uses `signtool` on Windows and `osslsigncode` elsewhere. For keys in a hardware token or a cloud service (Azure Trusted Signing, a KMS), give `command` with `{file}` where the file goes. `giode cert` makes a self-signed certificate to test with; for public releases, use one from a certificate authority so SmartScreen doesn't warn. |
-| macOS | `macos.identity` (or `macos.profile`) | A "Developer ID Application" identity in your keychain. With `macos.notary_id` and the app-specific password in `$GIODE_NOTARY_PASS`, the app is also notarized, so Gatekeeper opens it without warnings. |
+| macOS | `macos.identity` (or `macos.profile`) | A "Developer ID Application" identity in your keychain; without `macos.identity`, the keychain's only one. With `macos.notary_id` and the app-specific password in `$GIODE_NOTARY_PASS`, the app is also notarized, so Gatekeeper opens it once downloaded; signed but not notarized, macOS refuses it. `$GIODE_MACOS_IDENTITY`, `$GIODE_NOTARY_ID` and `$GIODE_NOTARY_TEAM_ID` (by default the identity's team) override the settings, for CI secrets. |
 | iOS | `ios.profile` | Device builds always need a provisioning profile; the matching identity must be in your keychain. |
 
 `giode sign <file>...` signs other Windows files the same way.

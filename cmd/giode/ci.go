@@ -141,7 +141,9 @@ Secrets it uses when set (Settings > Secrets and variables > Actions):
 	ANDROID_KEYSTORE_BASE64, GIODE_KEYSTORE_PASS   Android release keystore
 	WINDOWS_CERT_BASE64, GIODE_WINDOWS_CERT_PASS   Windows .pfx certificate
 	MACOS_CERT_BASE64, MACOS_CERT_PASS             macOS Developer ID .p12
-	GIODE_NOTARY_PASS                              notarization password
+	GIODE_NOTARY_ID                                notarization Apple ID (macos.notary_id)
+	GIODE_NOTARY_TEAM_ID                           its team ID (default: the certificate's)
+	GIODE_NOTARY_PASS                              its app-specific password
 	IOS_CERT_BASE64, IOS_CERT_PASS                 iOS distribution .p12
 	IOS_PROFILE_BASE64                             iOS provisioning profile
 	IOS_SHARE_PROFILE_BASE64                       iOS share extension's profile (app.share_target)
@@ -578,6 +580,11 @@ jobs:
           rm cert.p12
       - name: Build
         env:
+          # Signed with the certificate's Developer ID identity, and
+          # notarized with these (macos.notary_id, macos.notary_team_id
+          # when not set here).
+          GIODE_NOTARY_ID: ${{ secrets.GIODE_NOTARY_ID }}
+          GIODE_NOTARY_TEAM_ID: ${{ secrets.GIODE_NOTARY_TEAM_ID }}
           GIODE_NOTARY_PASS: ${{ secrets.GIODE_NOTARY_PASS }}
         run: |
           release=""
