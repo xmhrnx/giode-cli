@@ -27,7 +27,7 @@ type patch struct {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "8"
+const revision = "9"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -1179,7 +1179,89 @@ var Android = append(append([]patch{}, androidPacing...), androidKeyRepeat...)
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
-var All = append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...)
+var All = append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...)
+
+// windowsBackground fills a new Windows window with the app's background
+// color until its first frame: Gio skips the window's background erase,
+// so Windows showed the window white until then.
+var windowsBackground = []patch{
+	{
+		file: "app/giode_background.go",
+		new: `// Added by giode's Gio patches: a new window's color before its first
+// frame.
+
+package app
+
+import "sync/atomic"
+
+// giodeBackground is the color as a Windows COLORREF (0x00BBGGRR) with
+// bit 24 set, or 0 for none.
+var giodeBackground atomic.Uint32
+
+// GiodeSetBackground sets the color windows show until their first frame
+// is drawn, where Windows would show white; on false stops it, once the
+// first frame is on screen, so later frames don't flicker through it.
+func GiodeSetBackground(r, g, b uint8, on bool) {
+	if !on {
+		giodeBackground.Store(0)
+		return
+	}
+	giodeBackground.Store(1<<24 | uint32(b)<<16 | uint32(g)<<8 | uint32(r))
+}
+`,
+	},
+	{
+		file: "app/giode_background_windows.go",
+		new: `// Added by giode's Gio patches: a new window's color before its first
+// frame.
+
+package app
+
+import (
+	"syscall"
+	"unsafe"
+)
+
+var (
+	giodeUser32           = syscall.NewLazyDLL("user32.dll")
+	giodeGDI32            = syscall.NewLazyDLL("gdi32.dll")
+	giodeGetClientRect    = giodeUser32.NewProc("GetClientRect")
+	giodeFillRect         = giodeUser32.NewProc("FillRect")
+	giodeCreateSolidBrush = giodeGDI32.NewProc("CreateSolidBrush")
+	giodeDeleteObject     = giodeGDI32.NewProc("DeleteObject")
+)
+
+// giodeEraseBackground fills the window's client area through hdc with
+// GiodeSetBackground's color, when one is set.
+func giodeEraseBackground(hwnd, hdc uintptr) {
+	c := giodeBackground.Load()
+	if c == 0 || hdc == 0 {
+		return
+	}
+	var r [4]int32
+	giodeGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&r)))
+	brush, _, _ := giodeCreateSolidBrush.Call(uintptr(c & 0xffffff))
+	if brush == 0 {
+		return
+	}
+	giodeFillRect.Call(hdc, uintptr(unsafe.Pointer(&r)), brush)
+	giodeDeleteObject.Call(brush)
+}
+`,
+	},
+	{
+		file: "app/os_windows.go",
+		old: `	case windows.WM_ERASEBKGND:
+		// Avoid flickering between GPU content and background color.
+		return windows.TRUE`,
+		new: `	case windows.WM_ERASEBKGND:
+		// giode: until the first frame, the app's background color
+		// rather than white.
+		giodeEraseBackground(uintptr(hwnd), wParam)
+		// Avoid flickering between GPU content and background color.
+		return windows.TRUE`,
+	},
+}
 
 // Tag is the build tag of builds against patched Gio, which giode uses
 // to reach the patches' hooks.
@@ -1190,6 +1272,11 @@ const Tag = "giode_gio"
 // (revision 5 on),
 // for giode versions that use them; builds have Tag too.
 const Tag2 = "giode_gio2"
+
+// Tag3 is the build tag of builds against patches with
+// GiodeSetBackground (revision 9 on), for giode versions that use it;
+// builds have Tag and Tag2 too.
+const Tag3 = "giode_gio3"
 
 // ErrSkipped is returned, wrapped, when a module can't be patched:
 // it replaces or vendors Gio itself, or uses a workspace.

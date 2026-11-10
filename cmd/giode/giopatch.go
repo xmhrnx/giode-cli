@@ -64,7 +64,7 @@ func prepareGio(c *config.Config, target string) (gioBuild, error) {
 		fmt.Fprintf(os.Stderr, "  building against patched Gio (%s)\n", modfile)
 	}
 	b.modfile, b.cleanup = modfile, cleanup
-	b.tags = addTag(addTag(b.tags, giopatch.Tag), giopatch.Tag2)
+	b.tags = addTag(addTag(addTag(b.tags, giopatch.Tag), giopatch.Tag2), giopatch.Tag3)
 	return b, nil
 }
 

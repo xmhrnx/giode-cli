@@ -54,6 +54,10 @@ func TestPrepare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	win, err := os.ReadFile(filepath.Join(dir, "os_windows.go"))
+	if err != nil || !strings.Contains(string(win), "giodeEraseBackground(uintptr(hwnd), wParam)") {
+		t.Errorf("os_windows.go doesn't fill the background before the first frame (%v)", err)
+	}
 	for _, want := range []string{"giode: ask for the next frame", "func snippetsAgree"} {
 		if !strings.Contains(string(src), want) {
 			t.Errorf("os_android.go lacks %q", want)
@@ -78,6 +82,7 @@ func main() {
 	app.GiodeSetUnderlay(func(t app.GiodeTarget) { _ = t.Framebuffer }, true)
 	app.GiodeSetUnderlayHooks(func() {}, func(app.GiodeTarget) {})
 	app.GiodeSetFileDrag(func(kind int, x, y float32, uris string) {})
+	app.GiodeSetBackground(0x11, 0x22, 0x33, true)
 	new(app.Window).GiodeInject(nil)
 }
 `)
