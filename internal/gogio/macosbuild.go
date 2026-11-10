@@ -148,6 +148,18 @@ func (b *macBuilder) setIcon(path string) (err error) {
 	return err
 }
 
+// minMacOSVersion is the oldest macOS Go supports, the default of
+// [macos] min_os.
+const minMacOSVersion = 11
+
+// macMinOS is the oldest macOS the app runs on, [macos] min_os.
+func macMinOS(bi *buildInfo) int {
+	if bi.minsdk > 0 {
+		return bi.minsdk
+	}
+	return minMacOSVersion
+}
+
 func (b *macBuilder) setInfo(buildInfo *buildInfo, name string) {
 
 	manifestSrc := struct {
@@ -155,11 +167,13 @@ func (b *macBuilder) setInfo(buildInfo *buildInfo, name string) {
 		Bundle  string
 		Version Semver
 		Schemes []string
+		MinOS   int
 	}{
 		Name:    name,
 		Bundle:  buildInfo.appID,
 		Version: buildInfo.version,
 		Schemes: buildInfo.schemes,
+		MinOS:   macMinOS(buildInfo),
 	}
 
 	t, err := template.New("manifest").Parse(`<?xml version="1.0" encoding="UTF-8"?>
@@ -176,6 +190,8 @@ func (b *macBuilder) setInfo(buildInfo *buildInfo, name string) {
 	<string>{{.Version.StringCompact}}</string>
 	<key>CFBundleVersion</key>
 	<string>{{.Version.VersionCode}}</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>{{.MinOS}}.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>CFBundleName</key>
@@ -254,6 +270,9 @@ func (b *macBuilder) buildProgram(buildInfo *buildInfo, binDest string, name str
 		"GOOS=darwin",
 		"GOARCH="+arch,
 		"CGO_ENABLED=1", // Required to cross-compile between AMD/ARM
+		// giode: the binary runs on the macOS LSMinimumSystemVersion
+		// names, not only on the build machine's.
+		fmt.Sprintf("MACOSX_DEPLOYMENT_TARGET=%d.0", macMinOS(buildInfo)),
 	)
 	_, err := runCmd(cmd)
 	return err

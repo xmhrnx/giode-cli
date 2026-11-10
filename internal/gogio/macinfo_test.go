@@ -22,3 +22,17 @@ func TestMacInfoKeysReplaced(t *testing.T) {
 		}
 	}
 }
+
+// LSMinimumSystemVersion is [macos] min_os, 11 by default.
+func TestMacInfoMinimumSystemVersion(t *testing.T) {
+	old := extras
+	defer func() { extras = old }()
+	extras.InfoPlist = ""
+	for minsdk, want := range map[int]string{0: "11.0", 12: "12.0"} {
+		var b macBuilder
+		b.setInfo(&buildInfo{appID: "app.easysend", minsdk: minsdk}, "EasySend")
+		if w := "<key>LSMinimumSystemVersion</key>\n\t<string>" + want + "</string>"; !strings.Contains(string(b.Manifest), w) {
+			t.Errorf("min_os %d: lacks %q:\n%s", minsdk, w, b.Manifest)
+		}
+	}
+}

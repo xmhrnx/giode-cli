@@ -233,6 +233,9 @@ type IOS struct {
 
 // MacOS configures macOS app bundles.
 type MacOS struct {
+	// MinOS is the oldest macOS the app runs on, its Info.plist's
+	// LSMinimumSystemVersion and the deployment target its cgo code is
+	// built for; 11, Go's oldest, by default.
 	MinOS int               `toml:"min_os"`
 	Usage map[string]string `toml:"usage"`
 	Plist map[string]any    `toml:"plist"`

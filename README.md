@@ -167,7 +167,7 @@ UIBackgroundModes = ["audio"]
 ITSAppUsesNonExemptEncryption = false
 
 [macos]
-min_os = 11
+min_os = 11                    # LSMinimumSystemVersion and the deployment target; 11 by default
 identity = "Developer ID Application: Example Ltd (ABCDE12345)"  # signs -release builds
 notary_id = "you@example.com"
 notary_team_id = "ABCDE12345"

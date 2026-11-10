@@ -116,6 +116,8 @@ func shareExtPlist(bi *buildInfo, ext *ShareExtension) string {
 	<string>` + platform + `</string>
 	<key>MinimumOSVersion</key>
 	<string>` + fmt.Sprint(bi.minsdk) + `.0</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array><string>arm64</string></array>
 	<key>UIDeviceFamily</key>
 	<array>
 		<integer>1</integer>

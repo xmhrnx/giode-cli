@@ -20,6 +20,7 @@ func TestShareExtPlist(t *testing.T) {
 		"<string>GiodeShareViewController</string>",
 		"<string>group.com.example.send</string>",
 		"<string>7</string>",
+		"<key>UIRequiredDeviceCapabilities</key>\n\t<array><string>arm64</string></array>",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("plist lacks %s", want)
