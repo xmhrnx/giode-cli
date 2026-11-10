@@ -266,7 +266,8 @@ func runIOSSim(c *config.Config, udid string, appArgs []string) error {
 	}
 	fmt.Println("Building ios-sim…")
 	start := time.Now()
-	app, err := buildTarget(c, "ios-sim", buildOpts{})
+	// Only this Mac's architecture, which its simulator runs.
+	app, err := buildTarget(c, "ios-sim", buildOpts{arch: runtime.GOARCH})
 	if err != nil {
 		return err
 	}

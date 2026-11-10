@@ -49,11 +49,18 @@ func buildIOS(tmpDir, target string, bi *buildInfo) error {
 		if out == "" {
 			out = appName + ".ipa"
 		}
-		forDevice := strings.HasSuffix(out, ".ipa")
-		// Filter out unsupported architectures.
+		// giode: the simulator is chosen explicitly (or by a .app
+		// output), not by the architectures: on Apple silicon Macs it
+		// runs arm64 apps.
+		forDevice := strings.HasSuffix(out, ".ipa") && !*simulator
+		bi.simulator = !forDevice
+		// Filter out unsupported architectures: devices are arm64
+		// (or arm); the simulator arm64 or amd64 (or 386).
 		for i := len(bi.archs) - 1; i >= 0; i-- {
 			switch bi.archs[i] {
-			case "arm", "arm64":
+			case "arm64":
+				continue
+			case "arm":
 				if forDevice {
 					continue
 				}
@@ -64,6 +71,9 @@ func buildIOS(tmpDir, target string, bi *buildInfo) error {
 			}
 
 			bi.archs = slices.Delete(bi.archs, i, i+1)
+		}
+		if len(bi.archs) == 0 {
+			return errors.New("no architecture left to build for: devices take arm64, the simulator arm64 or amd64")
 		}
 		if !forDevice && !strings.HasSuffix(out, ".app") {
 			return fmt.Errorf("the specified output directory %q does not end in .app or .ipa", out)
@@ -213,14 +223,11 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 	lipo := exec.Command("xcrun", "lipo", "-o", exe, "-create")
 	var builds errgroup.Group
 	for _, a := range bi.archs {
-		clang, cflags, err := iosCompilerFor(target, a, bi.minsdk)
+		clang, cflags, err := iosCompilerFor(target, a, bi.minsdk, bi.simulator)
 		if err != nil {
 			return err
 		}
-		cflags = append(cflags,
-			"-fobjc-arc",
-			fmt.Sprintf("-miphoneos-version-min=%d.0", bi.minsdk),
-		)
+		cflags = append(cflags, "-fobjc-arc")
 		cflagsLine := strings.Join(cflags, " ")
 		exeSlice := filepath.Join(tmpDir, "app-"+a)
 		lipo.Args = append(lipo.Args, exeSlice)
@@ -291,7 +298,7 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 		if err != nil {
 			return err
 		}
-		if forSimulator(bi.archs) {
+		if bi.simulator {
 			// Device builds are signed with their profiles later.
 			if err := adhocSign(tmpDir, appex, shareExtEntitlements(ext)); err != nil {
 				return err
@@ -300,16 +307,6 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 		}
 	}
 	return nil
-}
-
-// forSimulator reports whether archs are a simulator build's.
-func forSimulator(archs []string) bool {
-	for _, a := range archs {
-		if a == "arm" || a == "arm64" {
-			return false
-		}
-	}
-	return true
 }
 
 // iosIcons builds an asset catalog - the app icon when icon isn't
@@ -334,7 +331,7 @@ func iosIcons(bi *buildInfo, tmpDir, appDir, icon string) (string, error) {
 			return "", err
 		}
 	}
-	args := []string{"--compile", appDir, "--platform", iosPlatformFor(bi.target)}
+	args := []string{"--compile", appDir, "--platform", iosPlatformFor(bi.target, bi.simulator)}
 	if icon == "" {
 		return compileAssets(bi, tmpDir, assets, args)
 	}
@@ -463,11 +460,14 @@ func colorSetJSON(dark, light string) ([]byte, error) {
 
 func buildInfoPlist(bi *buildInfo) string {
 	appName := UppercaseName(bi.name)
-	platform := iosPlatformFor(bi.target)
+	platform := iosPlatformFor(bi.target, bi.simulator)
 	var supportPlatform string
 	switch bi.target {
 	case "ios":
 		supportPlatform = "iPhoneOS"
+		if bi.simulator {
+			supportPlatform = "iPhoneSimulator"
+		}
 	case "tvos":
 		supportPlatform = "AppleTVOS"
 	}
@@ -609,11 +609,18 @@ func withPlistExtras(plist string) string {
 	return plist[:i] + extras.InfoPlist + "\n" + plist[i:]
 }
 
-func iosPlatformFor(target string) string {
-	switch target {
-	case "ios":
+// iosPlatformFor is the platform name of target's builds
+// (DTPlatformName, actool's --platform): the device's, or with
+// simulator the simulator's.
+func iosPlatformFor(target string, simulator bool) string {
+	switch {
+	case target == "ios" && simulator:
+		return "iphonesimulator"
+	case target == "ios":
 		return "iphoneos"
-	case "tvos":
+	case target == "tvos" && simulator:
+		return "appletvsimulator"
+	case target == "tvos":
 		return "appletvos"
 	default:
 		panic("invalid platform " + target)
@@ -653,7 +660,7 @@ func archiveIOS(tmpDir, target, frameworkRoot string, bi *buildInfo) error {
 	var builds errgroup.Group
 	tags := bi.tags
 	for _, a := range bi.archs {
-		clang, cflags, err := iosCompilerFor(target, a, bi.minsdk)
+		clang, cflags, err := iosCompilerFor(target, a, bi.minsdk, a == "386" || a == "amd64")
 		if err != nil {
 			return err
 		}
@@ -706,7 +713,10 @@ func archiveIOS(tmpDir, target, frameworkRoot string, bi *buildInfo) error {
 	return os.WriteFile(moduleFile, []byte(module), 0o644)
 }
 
-func iosCompilerFor(target, arch string, minsdk int) (string, []string, error) {
+// iosCompilerFor returns clang and its flags for arch: for the device,
+// or with simulator for the simulator, which on Apple silicon Macs is
+// arm64 too and needs the -simulator target to tell them apart.
+func iosCompilerFor(target, arch string, minsdk int, simulator bool) (string, []string, error) {
 	var (
 		platformSDK string
 		platformOS  string
@@ -721,6 +731,26 @@ func iosCompilerFor(target, arch string, minsdk int) (string, []string, error) {
 	}
 	switch arch {
 	case "arm", "arm64":
+		if simulator && arch == "arm" {
+			return "", nil, fmt.Errorf("unsupported -arch for the simulator: %s", arch)
+		}
+	case "386", "amd64":
+		if !simulator {
+			return "", nil, fmt.Errorf("unsupported -arch for devices: %s", arch)
+		}
+	default:
+		return "", nil, fmt.Errorf("unsupported -arch: %s", arch)
+	}
+	if simulator {
+		platformSDK += "simulator"
+		if minsdk == 0 {
+			minsdk = minSimulatorVersion
+		}
+		// The arm64 simulator starts with iOS 14.
+		if arch == "arm64" && minsdk < 14 {
+			minsdk = 14
+		}
+	} else {
 		platformSDK += "os"
 		if minsdk == 0 {
 			minsdk = minIOSVersion
@@ -728,14 +758,6 @@ func iosCompilerFor(target, arch string, minsdk int) (string, []string, error) {
 				minsdk = minTVOSVersion
 			}
 		}
-	case "386", "amd64":
-		platformOS += "-simulator"
-		platformSDK += "simulator"
-		if minsdk == 0 {
-			minsdk = minSimulatorVersion
-		}
-	default:
-		return "", nil, fmt.Errorf("unsupported -arch: %s", arch)
 	}
 	sdkPath, err := runCmd(exec.Command("xcrun", "--sdk", platformSDK, "--show-sdk-path"))
 	if err != nil {
@@ -745,12 +767,18 @@ func iosCompilerFor(target, arch string, minsdk int) (string, []string, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	cflags := []string{
-		"-arch", allArchs[arch].iosArch,
-		"-isysroot", sdkPath,
-		"-m" + platformOS + "-version-min=" + strconv.Itoa(minsdk),
+	return clang, iosTargetFlags(platformOS, allArchs[arch].iosArch, sdkPath, minsdk, simulator), nil
+}
+
+// iosTargetFlags are clang's flags for an Apple OS build: the target
+// triple, which names the simulator (arm64-apple-ios15.0-simulator),
+// and the SDK.
+func iosTargetFlags(platformOS, arch, sdkPath string, minsdk int, simulator bool) []string {
+	triple := fmt.Sprintf("%s-apple-%s%d.0", arch, platformOS, minsdk)
+	if simulator {
+		triple += "-simulator"
 	}
-	return clang, cflags, nil
+	return []string{"-target", triple, "-isysroot", sdkPath}
 }
 
 func zipDir(dst, base, dir string) (err error) {

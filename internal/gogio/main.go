@@ -37,6 +37,7 @@ var (
 	version       = new(string)
 	printCommands = new(bool)
 	keepWorkdir   = new(bool)
+	simulator     = new(bool)
 	linkMode      = new(string)
 	extraLdflags  = new(string)
 	extraTags     = new(string)
@@ -66,8 +67,12 @@ type Options struct {
 	// Output is the output file or directory. For ios or tvos, a .app
 	// suffix builds for the simulator.
 	Output string
-	AppID  string
-	Name   string
+	// Simulator builds an iOS app for the simulator, whatever its
+	// architectures (arm64 on Apple silicon Macs, amd64 on Intel
+	// ones; both by default), into Output, a .app.
+	Simulator bool
+	AppID     string
+	Name      string
 	// Version is major.minor.patch.versioncode; default 1.0.0.1.
 	Version string
 	// PrintCommands prints the commands run; KeepWorkdir keeps the
@@ -181,6 +186,7 @@ func Build(pkg string, o Options) error {
 	*target, *archNames, *minsdk, *targetsdk = o.Target, o.Arch, o.MinSDK, o.TargetSDK
 	*buildMode, *destPath, *appID, *name = o.BuildMode, o.Output, o.AppID, o.Name
 	*version, *printCommands, *keepWorkdir = o.Version, o.PrintCommands, o.KeepWorkdir
+	*simulator = o.Simulator
 	*linkMode, *extraLdflags, *extraTags, *iconPath = o.LinkMode, o.Ldflags, o.Tags, o.Icon
 	*signKey, *signPass = o.SignKey, o.SignPass
 	*notaryID, *notaryPass, *notaryTeamID = o.NotaryID, o.NotaryPass, o.NotaryTeamID

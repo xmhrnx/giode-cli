@@ -16,8 +16,10 @@ import (
 )
 
 type buildInfo struct {
-	appID          string
-	archs          []string
+	appID string
+	archs []string
+	// simulator is set for builds for the iOS simulator.
+	simulator      bool
 	ldflags        string
 	minsdk         int
 	targetsdk      int

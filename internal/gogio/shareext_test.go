@@ -47,3 +47,31 @@ func checkPlist(t *testing.T, p string) {
 		t.Errorf("invalid plist: %v\n%s", err, out)
 	}
 }
+
+// Simulator builds name the simulator's platform and target triple,
+// whatever the architecture: on Apple silicon it's arm64 too.
+func TestSimulatorPlatform(t *testing.T) {
+	if got := iosTargetFlags("ios", "arm64", "/sdk", 15, true); strings.Join(got, " ") != "-target arm64-apple-ios15.0-simulator -isysroot /sdk" {
+		t.Errorf("simulator flags %q", got)
+	}
+	if got := iosTargetFlags("ios", "arm64", "/sdk", 15, false); strings.Join(got, " ") != "-target arm64-apple-ios15.0 -isysroot /sdk" {
+		t.Errorf("device flags %q", got)
+	}
+	if p := iosPlatformFor("ios", true); p != "iphonesimulator" {
+		t.Errorf("simulator platform %q", p)
+	}
+	bi := &buildInfo{name: "app", appID: "com.example.app", target: "ios", minsdk: 15, simulator: true}
+	plist := buildInfoPlist(bi)
+	for _, want := range []string{"<string>iphonesimulator</string>", "<string>iPhoneSimulator</string>"} {
+		if !strings.Contains(plist, want) {
+			t.Errorf("simulator Info.plist lacks %s", want)
+		}
+	}
+	if strings.Contains(plist, "<string>iphoneos</string>") {
+		t.Error("simulator Info.plist says iphoneos")
+	}
+	ext := shareExtPlist(bi, &ShareExtension{AppGroup: "group.x", Scheme: "s"})
+	if !strings.Contains(ext, "<string>iphonesimulator</string>") || !strings.Contains(ext, "<string>iPhoneSimulator</string>") {
+		t.Errorf("simulator share extension plist:\n%s", ext)
+	}
+}

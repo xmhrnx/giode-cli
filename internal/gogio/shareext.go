@@ -47,7 +47,7 @@ func buildShareExtension(tmpDir, target, app string, bi *buildInfo, ext *ShareEx
 	lipo := exec.Command("xcrun", "lipo", "-o", exe, "-create")
 	var builds errgroup.Group
 	for _, a := range bi.archs {
-		clang, cflags, err := iosCompilerFor(target, a, bi.minsdk)
+		clang, cflags, err := iosCompilerFor(target, a, bi.minsdk, bi.simulator)
 		if err != nil {
 			return "", err
 		}
@@ -84,7 +84,11 @@ func buildShareExtension(tmpDir, target, app string, bi *buildInfo, ext *ShareEx
 // shareExtPlist is the share extension's Info.plist: a share-services
 // extension taking files, images, videos, text and links.
 func shareExtPlist(bi *buildInfo, ext *ShareExtension) string {
-	platform := iosPlatformFor(bi.target)
+	platform := iosPlatformFor(bi.target, bi.simulator)
+	supported := "iPhoneOS"
+	if bi.simulator {
+		supported = "iPhoneSimulator"
+	}
 	esc := html.EscapeString
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -110,7 +114,7 @@ func shareExtPlist(bi *buildInfo, ext *ShareExtension) string {
 	<string>` + fmt.Sprint(bi.version.VersionCode) + `</string>
 	<key>CFBundleSupportedPlatforms</key>
 	<array>
-		<string>iPhoneOS</string>
+		<string>` + supported + `</string>
 	</array>
 	<key>DTPlatformName</key>
 	<string>` + platform + `</string>
