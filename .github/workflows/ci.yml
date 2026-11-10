@@ -156,12 +156,29 @@ jobs:
           grep -q '"ITSAppUsesNonExemptEncryption" => false' plist.txt
           grep -q '"UIColorName" => "GiodeLaunchBackground"' plist.txt
           grep -q '"GiodeAppGroup" => "group.org.giode.demo"' plist.txt
+          grep -q '"DTPlatformName" => "iphonesimulator"' plist.txt
+          lipo -info dist/ios/Demo.app/Demo | tee lipo.txt
+          grep -q arm64 lipo.txt && grep -q x86_64 lipo.txt
           plutil -p dist/ios/Demo.app/PlugIns/Share.appex/Info.plist | tee share.txt
           grep -q '"NSExtensionPointIdentifier" => "com.apple.share-services"' share.txt
+          grep -q '"DTPlatformName" => "iphonesimulator"' share.txt
           lipo -info dist/ios/Demo.app/PlugIns/Share.appex/Share
           codesign -d --entitlements - dist/ios/Demo.app/PlugIns/Share.appex 2>&1 | tee ents.txt
           grep -q 'group.org.giode.demo' ents.txt
           test -d dist/macos/Demo.app
+      - name: Launch in the simulator
+        # The runner is Apple silicon: the simulator runs the arm64 slice.
+        working-directory: ${{ runner.temp }}/demo
+        timeout-minutes: 15
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; d = json.load(sys.stdin)["devices"]; print(next(x["udid"] for k, v in d.items() if "iOS" in k for x in v if x["name"].startswith("iPhone")))')
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" dist/ios/Demo.app
+          xcrun simctl launch "$udid" org.giode.demo
+          sleep 5
+          xcrun simctl spawn "$udid" launchctl list | grep -q org.giode.demo
+          xcrun simctl shutdown "$udid"
 
   # Builds, signs, installs and uninstalls the Windows installer on
   # Windows, with NSIS and signtool from the runner image.
