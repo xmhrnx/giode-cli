@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,13 +25,47 @@ var (
 // so it's tried again, after detaching any volume the failed attempt
 // left attached and removing a partial image.
 func createDMG(volname, stage, out string) error {
+	size, err := dirSize(stage)
+	if err != nil {
+		return err
+	}
 	return retry(dmgAttempts, dmgPause, func() error {
-		return run(exec.Command("hdiutil", "create", "-volname", volname, "-srcfolder", stage, "-ov", "-format", "UDZO", out))
+		return run(exec.Command("hdiutil", "create", "-volname", volname, "-srcfolder", stage, "-ov",
+			"-fs", "HFS+", "-size", dmgSize(size), "-format", "UDZO", out))
 	}, func(attempt int, err error) {
 		progress.Logf("hdiutil create failed (attempt %d of %d), trying again in %s:\n%v", attempt, dmgAttempts, dmgPause, err)
 		detachLeftovers(volname, out)
 		os.Remove(out)
 	})
+}
+
+// dmgSize is the size of the image hdiutil fills from the app, of size
+// bytes, in megabytes: with its own estimate, hdiutil can run out of
+// room in the image ("No space left on device"), so it gets the app's
+// size and a margin for the file system.
+func dmgSize(size int64) string {
+	const mb = 1 << 20
+	return strconv.FormatInt((size+size/4+32*mb+mb-1)/mb, 10) + "m"
+}
+
+// dirSize adds up the sizes of the files under dir, not following links
+// (the stage's link to /Applications).
+func dirSize(dir string) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type().IsRegular() {
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			total += info.Size()
+		}
+		return nil
+	})
+	return total, err
 }
 
 // retry calls try up to attempts times until it succeeds, calling

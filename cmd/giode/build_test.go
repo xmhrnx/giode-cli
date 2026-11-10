@@ -241,6 +241,7 @@ func TestWorkflowShareTarget(t *testing.T) {
 	}
 	wf := workflow(&config.Config{App: config.App{Platforms: []string{"ios"}, ShareTarget: true}})
 	for _, w := range []string{
+		"timeout-minutes: 60",
 		"IOS_SHARE_PROFILE_BASE64: ${{ secrets.IOS_SHARE_PROFILE_BASE64 }}",
 		`echo "$IOS_SHARE_PROFILE_BASE64" | base64 -d > "$RUNNER_TEMP/share.mobileprovision"`,
 		`echo "GIODE_IOS_SHARE_PROFILE=$RUNNER_TEMP/share.mobileprovision" >> "$GITHUB_ENV"`,
@@ -331,6 +332,9 @@ func TestWorkflowMAS(t *testing.T) {
 		`echo "GIODE_MACOS_STORE_PROFILE=$RUNNER_TEMP/store.provisionprofile" >> "$GITHUB_ENV"`,
 		"if: env.GIODE_MACOS_STORE_PROFILE != ''\n        run: giode build mas",
 		"dist/macos/appstore/*.pkg",
+		`-P "$MACOS_STORE_CERT_PASS" -T /usr/bin/codesign -T /usr/bin/productbuild`,
+		`-P "$MACOS_INSTALLER_CERT_PASS" -T /usr/bin/codesign -T /usr/bin/productbuild`,
+		"runs-on: macos-latest\n    # A hung signing step fails in an hour rather than GitHub's six.\n    timeout-minutes: 60",
 	} {
 		if !strings.Contains(wf, w) {
 			t.Errorf("lacks %q", w)

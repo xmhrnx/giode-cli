@@ -520,6 +520,8 @@ jobs:
     needs: test
 [[- end]]
     runs-on: macos-latest
+    # A hung signing step fails in an hour rather than GitHub's six.
+    timeout-minutes: 60
     env:
       MACOS_CERT_BASE64: ${{ secrets.MACOS_CERT_BASE64 }}
 [[- if .MAS]]
@@ -572,8 +574,8 @@ jobs:
           security unlock-keychain -p ci build.keychain
           echo "$MACOS_STORE_CERT_BASE64" | base64 -d > store.p12
           echo "$MACOS_INSTALLER_CERT_BASE64" | base64 -d > installer.p12
-          security import store.p12 -k build.keychain -P "$MACOS_STORE_CERT_PASS" -T /usr/bin/codesign
-          security import installer.p12 -k build.keychain -P "$MACOS_INSTALLER_CERT_PASS" -T /usr/bin/productbuild
+          security import store.p12 -k build.keychain -P "$MACOS_STORE_CERT_PASS" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security import installer.p12 -k build.keychain -P "$MACOS_INSTALLER_CERT_PASS" -T /usr/bin/codesign -T /usr/bin/productbuild
           security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
           rm store.p12 installer.p12
           echo "$MACOS_PROFILE_BASE64" | base64 -d > "$RUNNER_TEMP/store.provisionprofile"
@@ -597,6 +599,8 @@ jobs:
     needs: test
 [[- end]]
     runs-on: macos-latest
+    # A hung signing step fails in an hour rather than GitHub's six.
+    timeout-minutes: 60
     env:
       IOS_CERT_BASE64: ${{ secrets.IOS_CERT_BASE64 }}
       IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}

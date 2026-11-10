@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -61,5 +63,28 @@ func TestRetry(t *testing.T) {
 	err = retry(4, 0, func() error { tries++; return busy }, func(int, error) { cleanups++ })
 	if err != busy || tries != 4 || cleanups != 3 {
 		t.Errorf("always failing: err %v, %d tries, %d cleanups; want the last error, 4 tries, 3 cleanups", err, tries, cleanups)
+	}
+}
+
+// The image is the app's size with room for the file system, so hdiutil
+// doesn't run out of space in it.
+func TestDMGSize(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "App.app", "Contents", "MacOS"), 0o755)
+	os.WriteFile(filepath.Join(dir, "App.app", "Contents", "MacOS", "App"), make([]byte, 3<<20), 0o755)
+	os.WriteFile(filepath.Join(dir, "App.app", "Contents", "Info.plist"), make([]byte, 1000), 0o644)
+	os.Symlink("/Applications", filepath.Join(dir, "Applications"))
+	size, err := dirSize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size != 3<<20+1000 {
+		t.Errorf("size %d, want the files' (not the linked /Applications)", size)
+	}
+	if got := dmgSize(size); got != "36m" {
+		t.Errorf("dmgSize(%d) = %s, want 36m (3 MB, a quarter more and 32 MB)", size, got)
+	}
+	if got := dmgSize(400 << 20); got != "532m" {
+		t.Errorf("dmgSize(400 MB) = %s, want 532m", got)
 	}
 }
