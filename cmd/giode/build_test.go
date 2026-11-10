@@ -115,7 +115,7 @@ func TestWorkflowPlatformsTriggerTest(t *testing.T) {
 	}
 
 	def := workflow(&config.Config{App: config.App{Platforms: []string{"linux", "macos"}}})
-	for _, w := range []string{"\n  test:", "go test ./...", "needs: test", "giode build deb rpm", "needs: [linux, macos]", "push:\n    tags: [\"v*\"]"} {
+	for _, w := range []string{"\n  test:\n    runs-on: ubuntu-latest\n    timeout-minutes: 60", "go test ./...", "needs: test", "giode build deb rpm", "needs: [linux, macos]", "push:\n    tags: [\"v*\"]"} {
 		if !strings.Contains(def, w) {
 			t.Errorf("default lacks %q", w)
 		}
@@ -285,6 +285,7 @@ func TestWorkflowSnap(t *testing.T) {
 		"uses: snapcore/action-publish@v1",
 		"release: stable",
 		"needs: [linux, snap]",
+		"runner: ubuntu-24.04\n    runs-on: ${{ matrix.runner }}\n    timeout-minutes: 60",
 	} {
 		if !strings.Contains(wf, w) {
 			t.Errorf("snap workflow lacks %q", w)

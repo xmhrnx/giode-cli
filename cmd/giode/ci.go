@@ -373,6 +373,7 @@ jobs:
 [[- if .Test]]
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -404,6 +405,7 @@ jobs:
             runner: [[.Runner]]
             primary: [[.Primary]][[end]]
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -475,8 +477,10 @@ jobs:
       matrix:
         include:[[range .Linux]]
           - arch: [[.Arch]]
-            runner: [[.Runner]][[end]]
+            # snapcraft builds against Ubuntu 24.04 (core24).
+            runner: [[if eq .Runner "ubuntu-latest"]]ubuntu-24.04[[else]][[.Runner]][[end]][[end]]
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     env:
       SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
     steps:
