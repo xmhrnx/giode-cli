@@ -71,6 +71,14 @@ func TestPrepare(t *testing.T) {
 	if _, err := parser.ParseFile(token.NewFileSet(), "os_android.go", src, 0); err != nil {
 		t.Errorf("patched os_android.go doesn't parse: %v", err)
 	}
+	// iOS draws at the view's new size when the keyboard comes or goes,
+	// and never stretches a frame.
+	for file, want := range map[string]string{"os_ios.m": "[CATransaction setDisableActions:YES];", "metal_ios.go": "l.contentsGravity = kCAGravityTopLeft;"} {
+		if b, err := os.ReadFile(filepath.Join(dir, file)); err != nil || !strings.Contains(string(b), want) {
+			t.Errorf("%s lacks %q (%v)", file, want, err)
+		}
+	}
+
 	// gioui.org/shader picks the simulator's Metal libraries in
 	// simulator builds on any architecture.
 	cmd = exec.Command("go", "list", "-modfile="+modfile, "-f", "{{.Dir}}", "gioui.org/shader/gio")

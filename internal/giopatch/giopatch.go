@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "11"
+const revision = "12"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -1195,7 +1195,7 @@ var Android = append(append([]patch{}, androidPacing...), androidKeyRepeat...)
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
-var All = append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...)
+var All = append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...)
 
 // windowsBackground fills a new Windows window with the app's background
 // color until its first frame: Gio skips the window's background erase,
@@ -1310,6 +1310,59 @@ func giodeDarkFrame(hwnd uintptr) {
 		giodeEraseBackground(uintptr(hwnd), wParam)
 		// Avoid flickering between GPU content and background color.
 		return windows.TRUE`,
+	},
+}
+
+// iosResize keeps an iOS window's picture at its size when the view
+// changes size (the keyboard showing or hiding, rotation): the new frame
+// and the Metal drawable's size are set outside UIKit's animation, the
+// view draws at once and again once the layout settled, and the layer
+// never stretches a frame of another size (it showed tall, narrow text
+// after the keyboard closed) but places it at the top left.
+var iosResize = []patch{
+	{
+		file: "app/os_ios.m",
+		old:  "@import UIKit;\n",
+		new:  "@import UIKit;\n@import QuartzCore;\n",
+	},
+	{
+		file: "app/os_ios.m",
+		old: `	CGRect frame = self.view.bounds;
+	// Adjust view bounds to make room for the keyboard.
+	frame.size.height -= _keyboardHeight;
+	view.frame = frame;
+	gio_onDraw(view.handle);`,
+		new: `	CGRect frame = self.view.bounds;
+	// Adjust view bounds to make room for the keyboard.
+	frame.size.height -= _keyboardHeight;
+	// giode: the new size at once, not animated with the keyboard, and
+	// the drawable sized to it, so no frame is drawn at the old size.
+	[CATransaction begin];
+	[CATransaction setDisableActions:YES];
+	view.frame = frame;
+	if ([view.layer isKindOfClass:[CAMetalLayer class]]) {
+		CGFloat s = view.contentScaleFactor;
+		((CAMetalLayer *)view.layer).drawableSize = CGSizeMake(frame.size.width * s, frame.size.height * s);
+	}
+	[CATransaction commit];
+	gio_onDraw(view.handle);
+	// And again once the layout has settled.
+	uintptr_t handle = view.handle;
+	dispatch_async(dispatch_get_main_queue(), ^{
+		if (view.window != nil && view.handle == handle) {
+			gio_onDraw(handle);
+		}
+	});`,
+	},
+	{
+		file: "app/metal_ios.go",
+		old: `		l.needsDisplayOnBoundsChange = YES;
+		l.presentsWithTransaction = YES;`,
+		new: `		l.needsDisplayOnBoundsChange = YES;
+		l.presentsWithTransaction = YES;
+		// giode: a frame of another size than the view is placed, not
+		// stretched.
+		l.contentsGravity = kCAGravityTopLeft;`,
 	},
 }
 
