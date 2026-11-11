@@ -559,6 +559,9 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 			file = binaryName(c) + ".aab"
 		}
 	case "ios", "ios-sim":
+		if err := iosIcon(c, &g); err != nil {
+			return g, err
+		}
 		if runtime.GOOS != "darwin" {
 			return g, errors.New("iOS builds need macOS and Xcode")
 		}
@@ -701,6 +704,60 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 		g.Output = d
 	}
 	return g, nil
+}
+
+// iosIcon makes g use ios.icon, when set, rather than app.icon. iOS
+// shows an icon's transparent pixels white (the App Store refuses
+// transparency, so they're filled): ios.icon must be opaque, and an
+// app.icon with transparency gets a warning.
+func iosIcon(c *config.Config, g *gogio.Options) error {
+	if c.IOS.Icon == "" {
+		if g.Icon != "" {
+			if t, err := hasTransparency(g.Icon); err == nil && t {
+				progress.Logf("app.icon %s has transparent pixels, which iOS shows white; set ios.icon to an opaque square for iOS", g.Icon)
+			}
+		}
+		return nil
+	}
+	icon := c.Path(c.IOS.Icon)
+	if err := checkIcon(icon); err != nil {
+		return fmt.Errorf("ios.icon: %w", err)
+	}
+	t, err := hasTransparency(icon)
+	if err != nil {
+		return fmt.Errorf("ios.icon %s: %w", icon, err)
+	}
+	if t {
+		return fmt.Errorf("ios.icon %s has transparent pixels, which iOS shows white: fill the whole square (iOS rounds the corners itself)", icon)
+	}
+	g.Icon = icon
+	return nil
+}
+
+// hasTransparency reports whether the image at path has a pixel that
+// isn't fully opaque.
+func hasTransparency(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	img, _, err := image.Decode(f)
+	if err != nil {
+		return false, err
+	}
+	if o, ok := img.(interface{ Opaque() bool }); ok {
+		return !o.Opaque(), nil
+	}
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if _, _, _, a := img.At(x, y).RGBA(); a != 0xffff {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // checkIcon reports an icon the stores and launchers would reject.

@@ -152,6 +152,7 @@ libraries = ["libs/vendor.aar"]   # local .aar and .jar files built in
 
 [ios]
 min_os = 15
+icon = "assets/icon-ios.png"  # opaque, full-bleed: iOS rounds the corners (default app.icon)
 profile = "Agent.mobileprovision"   # for device builds ($GIODE_IOS_PROFILE overrides)
 push = "production"           # giode/push: aps-environment (development or production)
 share_profile = "AgentShare.mobileprovision"  # app.share_target's extension ($GIODE_IOS_SHARE_PROFILE)

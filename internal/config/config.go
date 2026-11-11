@@ -201,6 +201,10 @@ type Android struct {
 // IOS configures iOS builds.
 type IOS struct {
 	MinOS int `toml:"min_os"`
+	// Icon is the iOS app icon, a square PNG of 1024x1024 with no
+	// transparency: iOS rounds the corners itself and shows transparent
+	// pixels white. Without it iOS takes app.icon.
+	Icon string `toml:"icon"`
 	// Usage holds the texts iOS shows when asking for a permission, by
 	// short name: camera, microphone, speech, photos, photos_add,
 	// location, location_always, contacts, calendar, reminders,
