@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "12"
+const revision = "13"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -1313,13 +1313,25 @@ func giodeDarkFrame(hwnd uintptr) {
 	},
 }
 
-// iosResize keeps an iOS window's picture at its size when the view
-// changes size (the keyboard showing or hiding, rotation): the new frame
-// and the Metal drawable's size are set outside UIKit's animation, the
-// view draws at once and again once the layout settled, and the layer
-// never stretches a frame of another size (it showed tall, narrow text
-// after the keyboard closed) but places it at the top left.
+// iosResize fixes iOS windows. Reading an empty clipboard doesn't crash.
+// The picture keeps its size when the view changes size (the keyboard
+// showing or hiding, rotation): the new frame and the Metal drawable's
+// size are set outside UIKit's animation, the view draws at once and
+// again once the layout settled, and the layer never stretches a frame
+// of another size (it showed tall, narrow text after the keyboard
+// closed) but places it at the top left.
 var iosResize = []patch{
+	{
+		// An empty pasteboard's string is nil, and CFRelease(NULL)
+		// crashed the app reading it; macOS already checks.
+		file: "app/os_ios.go",
+		old: `	cstr := C.readClipboard()
+	defer C.CFRelease(cstr)`,
+		new: `	cstr := C.readClipboard()
+	if cstr != 0 {
+		defer C.CFRelease(cstr)
+	}`,
+	},
 	{
 		file: "app/os_ios.m",
 		old:  "@import UIKit;\n",

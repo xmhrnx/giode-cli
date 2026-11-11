@@ -73,7 +73,7 @@ func TestPrepare(t *testing.T) {
 	}
 	// iOS draws at the view's new size when the keyboard comes or goes,
 	// and never stretches a frame.
-	for file, want := range map[string]string{"os_ios.m": "[CATransaction setDisableActions:YES];", "metal_ios.go": "l.contentsGravity = kCAGravityTopLeft;"} {
+	for file, want := range map[string]string{"os_ios.m": "[CATransaction setDisableActions:YES];", "metal_ios.go": "l.contentsGravity = kCAGravityTopLeft;", "os_ios.go": "if cstr != 0 {\n\t\tdefer C.CFRelease(cstr)"} {
 		if b, err := os.ReadFile(filepath.Join(dir, file)); err != nil || !strings.Contains(string(b), want) {
 			t.Errorf("%s lacks %q (%v)", file, want, err)
 		}
