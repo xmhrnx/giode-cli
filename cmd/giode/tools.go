@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -8,6 +9,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
+	"golang.org/x/mod/semver"
 )
 
 const devicesUsage = `
@@ -147,6 +151,13 @@ func cmdUpgrade(args []string) error {
 		version = pos[0]
 	}
 	before, _ := output("go", "-C", *dir, "list", "-m", "-f", "{{.Version}}", "github.com/xmhrnx/giode")
+	if version == "latest" {
+		version = newestGiode()
+		if semver.IsValid(before) && semver.IsValid(version) && semver.Compare(before, version) >= 0 {
+			fmt.Printf("giode is up to date (%s).\n", before)
+			return nil
+		}
+	}
 	if err := run(command(nil, "go", "-C", *dir, "get", "github.com/xmhrnx/giode@"+version)); err != nil {
 		return err
 	}
@@ -160,6 +171,27 @@ func cmdUpgrade(args []string) error {
 		fmt.Printf("giode %s → %s\n", before, after)
 	}
 	return nil
+}
+
+// newestGiode returns giode's newest version as the repository itself
+// reports it, or "latest" when that can't be found out (no git, no
+// network, a GOPROXY that's off). proxy.golang.org caches @latest for a
+// while after a tag is pushed and keeps answering with the previous
+// release; asked for a specific version, it fetches it on demand.
+func newestGiode() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "list", "-m", "-f", "{{.Version}}", giodeModule+"@latest")
+	cmd.Dir = os.TempDir()
+	cmd.Env = append(os.Environ(), "GOPROXY=direct", "GO111MODULE=on", "GOWORK=off", "GOFLAGS=")
+	if verbose {
+		fmt.Fprintln(os.Stderr, "+ GOPROXY=direct", strings.Join(cmd.Args, " "))
+	}
+	out, err := cmd.Output()
+	if v := strings.TrimSpace(string(out)); err == nil && semver.IsValid(v) {
+		return v
+	}
+	return "latest"
 }
 
 // moveGiodeImports rewrites imports of the legacy giode module path to

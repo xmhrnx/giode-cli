@@ -104,6 +104,9 @@ func cmdNew(args []string) error {
 		return err
 	}
 	if !*offline {
+		if *version == "latest" {
+			*version = newestGiode()
+		}
 		fmt.Println("Fetching github.com/xmhrnx/giode@" + *version + "…")
 		if err := run(command(nil, "go", "-C", dir, "get", "github.com/xmhrnx/giode@"+*version)); err != nil {
 			return err
