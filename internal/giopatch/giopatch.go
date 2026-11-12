@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "13"
+const revision = "14"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -99,9 +99,31 @@ var androidPacing = []patch{
 // snippet window along with the text. Restarting cancels the
 // keyboard's key repeat, so holding backspace deleted one character.
 // The keyboard reads text on demand, so it only needs a restart when
-// the text changed under it: unless one snippet lies within the other
-// with the same text (the editor just moved its window).
+// the text changed under it: not when one snippet lies within the
+// other with the same text (the editor just moved its window), nor
+// right after the keyboard's own edits (key events and input
+// connection edits), which it knows - from the first one on.
 var androidKeyRepeat = []patch{
+	{
+		file: "app/os_android.go",
+		old: `func Java_org_gioui_GioView_onKeyEvent(env *C.JNIEnv, class C.jclass, handle C.jlong, keyCode, r C.jint, pressed C.jboolean, t C.jlong) {
+	w := cgo.Handle(handle).Value().(*window)
+`,
+		new: `func Java_org_gioui_GioView_onKeyEvent(env *C.JNIEnv, class C.jclass, handle C.jlong, keyCode, r C.jint, pressed C.jboolean, t C.jlong) {
+	w := cgo.Handle(handle).Value().(*window)
+	giodeKeyboardEdit = time.Now()
+`,
+	},
+	{
+		file: "app/os_android.go",
+		old: `func Java_org_gioui_GioView_imeReplace(env *C.JNIEnv, class C.jclass, handle C.jlong, start, end C.jint, jtext C.jstring) {
+	w := cgo.Handle(handle).Value().(*window)
+`,
+		new: `func Java_org_gioui_GioView_imeReplace(env *C.JNIEnv, class C.jclass, handle C.jlong, start, end C.jint, jtext C.jstring) {
+	w := cgo.Handle(handle).Value().(*window)
+	giodeKeyboardEdit = time.Now()
+`,
+	},
 	{
 		file: "app/os_android.go",
 		old: `		if old.Snippet != new.Snippet {
@@ -109,9 +131,11 @@ var androidKeyRepeat = []patch{
 			return
 		}
 `,
-		new: `		if old.Snippet != new.Snippet && !snippetsAgree(old.Snippet, new.Snippet) {
-			// giode: only when the text changed under the keyboard;
-			// a restart cancels its key repeat.
+		new: `		if old.Snippet != new.Snippet && !snippetsAgree(old.Snippet, new.Snippet) && !giodeKeyboardEdited() {
+			// giode: only when the text changed under the keyboard,
+			// not by its own edits (a held key, a backspace): a
+			// restart cancels its key repeat. The keyboard reads the
+			// text on demand and learns the selection below.
 			callVoidMethod(env, w.view, gioView.restartInput)
 			return
 		}
@@ -121,7 +145,18 @@ var androidKeyRepeat = []patch{
 		file: "app/os_android.go",
 		old: `func (w *window) ShowTextInput(show bool) {
 `,
-		new: `// snippetsAgree reports whether one snippet of the editor's text lies
+		new: `// giodeKeyboardEdit is when the keyboard last edited the text: a key
+// event or an input connection edit (giode).
+var giodeKeyboardEdit time.Time
+
+// giodeKeyboardEdited reports whether the keyboard edited the text a
+// moment ago, as it does every few dozen milliseconds while a key is
+// held: the editor's changes since are its own.
+func giodeKeyboardEdited() bool {
+	return time.Since(giodeKeyboardEdit) < time.Second
+}
+
+// snippetsAgree reports whether one snippet of the editor's text lies
 // within the other with the same text: the editor only moved its
 // window over text the keyboard already knows (giode).
 func snippetsAgree(a, b key.Snippet) bool {
@@ -1195,7 +1230,7 @@ var Android = append(append([]patch{}, androidPacing...), androidKeyRepeat...)
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
-var All = append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...)
+var All = append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...)
 
 // windowsBackground fills a new Windows window with the app's background
 // color until its first frame: Gio skips the window's background erase,
@@ -1377,6 +1412,167 @@ var iosResize = []patch{
 		l.contentsGravity = kCAGravityTopLeft;`,
 	},
 }
+
+// androidReattach lets an Android app come back after its activity was
+// destroyed while the process lives on (a foreground service, say):
+// Gio hands the new activity's view to the existing window, but first
+// waited on a channel only a new window's creation reads, so the new
+// activity stayed on its splash screen.
+var androidReattach = []patch{
+	{
+		file: "app/os_android.go",
+		old: `	mainWindow.windows <- struct{}{}
+	if w.view != 0 {`,
+		new: `	if !ok {
+		// giode: only a new window's newWindow waits for this; an
+		// existing one getting a new view has no one to receive it.
+		mainWindow.windows <- struct{}{}
+	}
+	if w.view != 0 {`,
+	},
+}
+
+// iosKeyboard asks UIKit for the keyboard only when the view isn't
+// already its first responder (and gives it up only when it is), so
+// repeated requests while typing leave the keyboard alone.
+var iosKeyboard = []patch{
+	{
+		file: "app/os_ios.go",
+		old:  "\t[view becomeFirstResponder];\n",
+		new:  "\tif (!view.isFirstResponder) {\n\t\t[view becomeFirstResponder];\n\t}\n\tgiodeKeyboardView = view;\n",
+	},
+	{
+		file: "app/os_ios.go",
+		old:  "\t[view resignFirstResponder];\n",
+		new:  "\tif (view.isFirstResponder) {\n\t\t[view resignFirstResponder];\n\t}\n",
+	},
+	{
+		file: "app/os_ios.go",
+		old:  "static void showTextInput(CFTypeRef viewRef) {\n",
+		new: `// giodeKeyboardView is the view the keyboard was last shown for
+// (giode), reloaded when the return key changes.
+static __weak UIView *giodeKeyboardView;
+
+static void giodeReloadKeyboard(void) {
+	dispatch_async(dispatch_get_main_queue(), ^{
+		UIView *v = giodeKeyboardView;
+		if (v != nil && v.isFirstResponder) {
+			[v reloadInputViews];
+		}
+	});
+}
+
+static void showTextInput(CFTypeRef viewRef) {
+`,
+	},
+}
+
+// returnKey lets giode make the keyboard's return key read Done for
+// single-line fields: app.GiodeSetReturnKeyDone, behind TagReturnKey.
+// The key still arrives as Enter.
+var returnKey = []patch{
+	{
+		file: "app/giode_returnkey.go",
+		new: `// Added by giode's Gio patches: the software keyboard's return key.
+
+package app
+
+import "sync/atomic"
+
+var giodeReturnDone atomic.Bool
+
+// GiodeSetReturnKeyDone makes the software keyboard's return key read
+// Done (on false, the default), on Android and iOS.
+func GiodeSetReturnKeyDone(done bool) {
+	if giodeReturnDone.Swap(done) != done {
+		giodeReturnKeyChanged()
+	}
+}
+`,
+	},
+	{
+		file: "app/giode_returnkey_other.go",
+		new: `// Added by giode's Gio patches.
+
+//go:build !android && !ios
+
+package app
+
+func giodeReturnKeyChanged() {}
+`,
+	},
+	{
+		file: "app/os_ios.go",
+		old:  "func (w *window) SetInputHint(_ key.InputHint) {}\n",
+		new: `func (w *window) SetInputHint(_ key.InputHint) {}
+
+// giodeReturnKeyChanged has the keyboard read the return key again
+// (giode).
+func giodeReturnKeyChanged() {
+	C.giodeReloadKeyboard()
+}
+
+//export giodeReturnKeyDone
+func giodeReturnKeyDone() C.int {
+	if giodeReturnDone.Load() {
+		return 1
+	}
+	return 0
+}
+`,
+	},
+	{
+		file: "app/os_ios.m",
+		old:  "- (BOOL)canBecomeFirstResponder {",
+		new: `// giode: the return key reads Done for single-line fields.
+- (UIReturnKeyType)returnKeyType {
+	return giodeReturnKeyDone() ? UIReturnKeyDone : UIReturnKeyDefault;
+}
+
+- (BOOL)canBecomeFirstResponder {`,
+	},
+	{
+		file: "app/os_android.go",
+		old:  "func (w *window) SetInputHint(mode key.InputHint) {\n",
+		new: `// giodeReturnKeyChanged restarts the keyboards' input connections, so
+// they read the return key's action again (giode).
+func giodeReturnKeyChanged() {
+	runOnMain(func(env *C.JNIEnv) {
+		for _, w := range windows {
+			if w.view != 0 {
+				callVoidMethod(env, w.view, gioView.restartInput)
+			}
+		}
+	})
+}
+
+//export Java_org_gioui_GioView_giodeReturnDone
+func Java_org_gioui_GioView_giodeReturnDone(env *C.JNIEnv, class C.jclass) C.jboolean {
+	if giodeReturnDone.Load() {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+func (w *window) SetInputHint(mode key.InputHint) {
+`,
+	},
+	{
+		file: "app/GioView.java",
+		old:  "\tstatic private native long onCreateView(GioView view);\n",
+		new:  "\tstatic private native long onCreateView(GioView view);\n\tstatic private native boolean giodeReturnDone();\n",
+	},
+	{
+		file: "app/GioView.java",
+		old:  "\t\teditor.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN | EditorInfo.IME_FLAG_NO_EXTRACT_UI;\n",
+		new:  "\t\teditor.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN | EditorInfo.IME_FLAG_NO_EXTRACT_UI;\n\t\tif (giodeReturnDone()) {\n\t\t\t// giode: Done on single-line fields; it arrives as Enter.\n\t\t\teditor.imeOptions |= EditorInfo.IME_ACTION_DONE;\n\t\t}\n",
+	},
+}
+
+// TagReturnKey is the build tag of builds against patches with
+// GiodeSetReturnKeyDone (revision 14 on), for giode versions that use
+// it; builds have the earlier tags too.
+const TagReturnKey = "giode_gio4"
 
 // iosSimulatorShaders makes Gio's shaders pick their simulator Metal
 // libraries in simulator builds on any architecture: gioui.org/shader

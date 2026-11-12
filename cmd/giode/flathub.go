@@ -162,7 +162,7 @@ func buildFlathub(c *config.Config, o buildOpts) (string, error) {
 	}
 	tags := c.App.Tags
 	if patched {
-		tags = addTag(addTag(addTag(tags, giopatch.Tag), giopatch.Tag2), giopatch.Tag3)
+		tags = addTag(addTag(addTag(addTag(tags, giopatch.Tag), giopatch.Tag2), giopatch.Tag3), giopatch.TagReturnKey)
 	}
 	ldflags := strings.TrimSpace("-s -w -X gioui.org/app.ID=" + c.LinuxID() + " " + desktopLdflags(c, "linux"))
 	var b strings.Builder

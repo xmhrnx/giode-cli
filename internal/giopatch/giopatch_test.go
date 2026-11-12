@@ -63,7 +63,7 @@ func TestPrepare(t *testing.T) {
 			t.Errorf("os_windows.go lacks %q", want)
 		}
 	}
-	for _, want := range []string{"giode: ask for the next frame", "func snippetsAgree"} {
+	for _, want := range []string{"giode: ask for the next frame", "func snippetsAgree", "giodeKeyboardEdit = time.Now()", "if !ok {\n\t\t// giode: only a new window's newWindow waits"} {
 		if !strings.Contains(string(src), want) {
 			t.Errorf("os_android.go lacks %q", want)
 		}
@@ -73,7 +73,13 @@ func TestPrepare(t *testing.T) {
 	}
 	// iOS draws at the view's new size when the keyboard comes or goes,
 	// and never stretches a frame.
-	for file, want := range map[string]string{"os_ios.m": "[CATransaction setDisableActions:YES];", "metal_ios.go": "l.contentsGravity = kCAGravityTopLeft;", "os_ios.go": "if cstr != 0 {\n\t\tdefer C.CFRelease(cstr)"} {
+	for file, want := range map[string]string{
+		"os_ios.m":           "[CATransaction setDisableActions:YES];",
+		"metal_ios.go":       "l.contentsGravity = kCAGravityTopLeft;",
+		"os_ios.go":          "if cstr != 0 {\n\t\tdefer C.CFRelease(cstr)",
+		"GioView.java":       "editor.imeOptions |= EditorInfo.IME_ACTION_DONE;",
+		"giode_returnkey.go": "func GiodeSetReturnKeyDone(done bool)",
+	} {
 		if b, err := os.ReadFile(filepath.Join(dir, file)); err != nil || !strings.Contains(string(b), want) {
 			t.Errorf("%s lacks %q (%v)", file, want, err)
 		}
@@ -121,6 +127,7 @@ func main() {
 	app.GiodeSetUnderlayHooks(func() {}, func(app.GiodeTarget) {})
 	app.GiodeSetFileDrag(func(kind int, x, y float32, uris string) {})
 	app.GiodeSetBackground(0x11, 0x22, 0x33, true)
+	app.GiodeSetReturnKeyDone(true)
 	new(app.Window).GiodeInject(nil)
 }
 `)
