@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "15"
+const revision = "16"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -1230,7 +1230,7 @@ var Android = append(append([]patch{}, androidPacing...), androidKeyRepeat...)
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
-var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...)
+var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...), iosTextInput...)
 
 // windowsBackground fills a new Windows window with the app's background
 // color until its first frame: Gio skips the window's background erase,
@@ -1973,4 +1973,506 @@ func findModule(dir, path string) (module, error) {
 		}
 	}
 	return m, nil
+}
+
+// iosTextInput makes Gio's iOS view a UITextInput rather than only a
+// UIKeyInput. UIKit repeats a held delete key only for text inputs (a
+// UIKeyInput view got one deleteBackward per press), and marked text
+// from input methods (Chinese, Japanese, accents) needs it too. The
+// keyboard sees the focused editor's text through Gio's editor state,
+// in UTF-16 offsets as on macOS, and is told when the app changes the
+// text or selection under it, except for a second after a delete, so a
+// held delete isn't interrupted (as on Android). Autocorrection and
+// spell checking stay off, as they were.
+var iosTextInput = []patch{
+	{
+		file: "app/giode_textinput_ios.go",
+		new: `// SPDX-License-Identifier: Unlicense OR MIT
+
+package app
+
+/*
+#include <UIKit/UIKit.h>
+
+__attribute__ ((visibility ("hidden"))) void giodeTextInputChanged(CFTypeRef viewRef);
+*/
+import "C"
+
+import (
+	"time"
+	"unicode/utf8"
+	"unsafe"
+
+	"gioui.org/f32"
+	"gioui.org/io/key"
+)
+
+// giodeSnippetMargin is how many runes of text around the selection the
+// keyboard is given (giode).
+const giodeSnippetMargin = 256
+
+// giodeDeleteAt is when the keyboard last deleted: the editor applies
+// a delete in its next frame, and the change it then reports is the
+// keyboard's own, not one to tell the keyboard about.
+var giodeDeleteAt time.Time
+
+func giodeNoteDelete() {
+	giodeDeleteAt = time.Now()
+}
+
+func (w *window) giodeEditorStateChanged(old, new editorState) {
+	if shouldCancelComposition(old, new) {
+		if new.compose.Start != -1 {
+			w.w.SetComposingRegion(key.Range{Start: -1, End: -1})
+		}
+		if w.view != 0 && time.Since(giodeDeleteAt) > time.Second {
+			C.giodeTextInputChanged(w.view)
+		}
+	}
+	// Keep text around the selection in the snippet the keyboard reads.
+	sel := normRange(new.Selection.Range)
+	sn := normRange(new.Snippet.Range)
+	if sn.Start > max(0, sel.Start-giodeSnippetMargin/2) || sn.End < sel.End {
+		w.w.SetEditorSnippet(key.Range{Start: max(0, sel.Start-giodeSnippetMargin), End: sel.End + giodeSnippetMargin})
+	}
+}
+
+// giodeInsertText inserts text from the keyboard, replacing the marked
+// text if there is any.
+func giodeInsertText(w *window, text string) {
+	st := w.w.EditorState()
+	if st.compose.Start == -1 {
+		w.w.EditorInsert(text)
+		return
+	}
+	rng := imeRange(st)
+	w.w.EditorReplace(rng, text)
+	w.w.SetComposingRegion(key.Range{Start: -1, End: -1})
+	pos := rng.Start + utf8.RuneCountInString(text)
+	w.w.SetEditorSelection(key.Range{Start: pos, End: pos})
+}
+
+func giodeRunes(st editorState, start, end C.long) key.Range {
+	return normRange(key.Range{Start: st.RunesIndex(int(max(start, 0))), End: st.RunesIndex(int(max(end, 0)))})
+}
+
+// giodeTextState fills out with the selection's start and end, the
+// marked text's (-1 without), and the end of the known text, in UTF-16
+// offsets.
+//
+//export giodeTextState
+func giodeTextState(h C.uintptr_t, out *C.long) {
+	st := viewFor(h).w.EditorState()
+	v := unsafe.Slice(out, 5)
+	sel := normRange(st.Selection.Range)
+	v[0] = C.long(st.UTF16Index(sel.Start))
+	v[1] = C.long(st.UTF16Index(sel.End))
+	v[2], v[3] = -1, -1
+	if st.compose.Start != -1 {
+		c := normRange(st.compose)
+		v[2] = C.long(st.UTF16Index(c.Start))
+		v[3] = C.long(st.UTF16Index(c.End))
+	}
+	v[4] = C.long(st.UTF16Index(max(normRange(st.Snippet.Range).End, sel.End)))
+}
+
+// giodeTextIn returns the known text between UTF-16 offsets start and
+// end, asking the editor for more when it reaches beyond the snippet.
+//
+//export giodeTextIn
+func giodeTextIn(h C.uintptr_t, start, end C.long) C.CFTypeRef {
+	w := viewFor(h)
+	st := w.w.EditorState()
+	r := giodeRunes(st, start, end)
+	sn := normRange(st.Snippet.Range)
+	if r.Start < sn.Start || r.End > sn.End {
+		sel := normRange(st.Selection.Range)
+		w.w.SetEditorSnippet(key.Range{
+			Start: max(0, min(r.Start, sel.Start)-giodeSnippetMargin),
+			End:   max(r.End, sel.End) + giodeSnippetMargin,
+		})
+	}
+	runes := []rune(st.Snippet.Text)
+	a := min(max(r.Start-sn.Start, 0), len(runes))
+	b := min(max(r.End-sn.Start, a), len(runes))
+	return stringToNSString(string(runes[a:b]))
+}
+
+//export giodeReplaceText
+func giodeReplaceText(h C.uintptr_t, start, end C.long, text C.CFTypeRef) {
+	w := viewFor(h)
+	w.w.EditorReplace(giodeRunes(w.w.EditorState(), start, end), nsstringToString(text))
+}
+
+//export giodeSetSelection
+func giodeSetSelection(h C.uintptr_t, start, end C.long) {
+	w := viewFor(h)
+	w.w.SetEditorSelection(giodeRunes(w.w.EditorState(), start, end))
+}
+
+// giodeSetMarkedText replaces the marked text (or the selection) with
+// text, marks it, and selects selStart to selEnd within it (UTF-16
+// offsets; -1 puts the caret after it).
+//
+//export giodeSetMarkedText
+func giodeSetMarkedText(h C.uintptr_t, text C.CFTypeRef, selStart, selEnd C.long) {
+	w := viewFor(h)
+	str := nsstringToString(text)
+	rng := imeRange(w.w.EditorState())
+	w.w.EditorReplace(rng, str)
+	comp := key.Range{Start: rng.Start, End: rng.Start + utf8.RuneCountInString(str)}
+	if comp.Start == comp.End {
+		w.w.SetComposingRegion(key.Range{Start: -1, End: -1})
+	} else {
+		w.w.SetComposingRegion(comp)
+	}
+	sel := key.Range{Start: comp.End, End: comp.End}
+	if selStart >= 0 {
+		st := w.w.EditorState()
+		off := C.long(st.UTF16Index(comp.Start))
+		sel = giodeRunes(st, off+selStart, off+selEnd)
+		sel.Start = min(max(sel.Start, comp.Start), comp.End)
+		sel.End = min(max(sel.End, comp.Start), comp.End)
+	}
+	w.w.SetEditorSelection(sel)
+}
+
+//export giodeUnmarkText
+func giodeUnmarkText(h C.uintptr_t) {
+	viewFor(h).w.SetComposingRegion(key.Range{Start: -1, End: -1})
+}
+
+// giodeCaretRect fills out with the caret's x, y, width and height in
+// the view's pixels.
+//
+//export giodeCaretRect
+func giodeCaretRect(h C.uintptr_t, out *C.double) {
+	sel := viewFor(h).w.EditorState().Selection
+	r := f32.Rectangle{
+		Min: sel.Transform.Transform(sel.Pos.Sub(f32.Pt(0, sel.Ascent))),
+		Max: sel.Transform.Transform(sel.Pos.Add(f32.Pt(0, sel.Descent))),
+	}.Canon()
+	v := unsafe.Slice(out, 4)
+	v[0], v[1] = C.double(r.Min.X), C.double(r.Min.Y)
+	v[2], v[3] = C.double(r.Dx()), C.double(r.Dy())
+}
+`,
+	},
+	{
+		file: "app/os_ios.go",
+		old:  "func (w *window) EditorStateChanged(old, new editorState) {}\n",
+		new:  "func (w *window) EditorStateChanged(old, new editorState) {\n\tw.giodeEditorStateChanged(old, new)\n}\n",
+	},
+	{
+		file: "app/os_ios.go",
+		old:  "\tw := viewFor(h)\n\tw.w.EditorInsert(nsstringToString(str))\n",
+		new:  "\tgiodeInsertText(viewFor(h), nsstringToString(str))\n",
+	},
+	{
+		file: "app/os_ios.go",
+		old:  "\tviewFor(h).onKeyCommand(key.NameDeleteBackward)\n",
+		new:  "\tgiodeNoteDelete()\n\tviewFor(h).onKeyCommand(key.NameDeleteBackward)\n",
+	},
+	{
+		file: "app/os_ios.m",
+		old:  "@interface GioView: UIView <UIKeyInput>\n@property uintptr_t handle;\n@end\n",
+		new: `@interface GioView: UIView <UITextInput>
+@property uintptr_t handle;
+@end
+
+// giode: UITextInput positions and ranges are UTF-16 offsets into the
+// focused editor's text.
+@interface GiodeTextPosition : UITextPosition
+@property (nonatomic) NSInteger offset;
++ (GiodeTextPosition *)at:(NSInteger)offset;
+@end
+
+@implementation GiodeTextPosition
++ (GiodeTextPosition *)at:(NSInteger)offset {
+	GiodeTextPosition *p = [[GiodeTextPosition alloc] init];
+	p.offset = MAX(offset, 0);
+	return p;
+}
+@end
+
+@interface GiodeTextRange : UITextRange
+@property (nonatomic) NSInteger from;
+@property (nonatomic) NSInteger to;
++ (GiodeTextRange *)from:(NSInteger)from to:(NSInteger)to;
+@end
+
+@implementation GiodeTextRange
++ (GiodeTextRange *)from:(NSInteger)from to:(NSInteger)to {
+	GiodeTextRange *r = [[GiodeTextRange alloc] init];
+	r.from = MAX(MIN(from, to), 0);
+	r.to = MAX(MAX(from, to), 0);
+	return r;
+}
+- (UITextPosition *)start {
+	return [GiodeTextPosition at:self.from];
+}
+- (UITextPosition *)end {
+	return [GiodeTextPosition at:self.to];
+}
+- (BOOL)isEmpty {
+	return self.from == self.to;
+}
+@end
+
+static NSInteger giodeOffset(UITextPosition *p) {
+	if ([p isKindOfClass:[GiodeTextPosition class]]) {
+		return ((GiodeTextPosition *)p).offset;
+	}
+	return 0;
+}
+
+static BOOL giodeRange(UITextRange *r, NSInteger *from, NSInteger *to) {
+	if (![r isKindOfClass:[GiodeTextRange class]]) {
+		return NO;
+	}
+	*from = ((GiodeTextRange *)r).from;
+	*to = ((GiodeTextRange *)r).to;
+	return YES;
+}
+
+static __weak id<UITextInputDelegate> giodeInputDelegate;
+static NSDictionary<NSAttributedStringKey, id> *giodeMarkedTextStyle;
+static UITextInputStringTokenizer *giodeTokenizer;
+static __weak UIView *giodeTokenizerView;
+
+// giodeTextInputChanged tells the keyboard that the text or selection
+// changed under it.
+void giodeTextInputChanged(CFTypeRef viewRef) {
+	UIView<UITextInput> *view = (__bridge UIView<UITextInput> *)viewRef;
+	id<UITextInputDelegate> d = giodeInputDelegate;
+	if (d == nil || !view.isFirstResponder) {
+		return;
+	}
+	[d selectionWillChange:view];
+	[d textWillChange:view];
+	[d textDidChange:view];
+	[d selectionDidChange:view];
+}
+`,
+	},
+	{
+		file: "app/os_ios.m",
+		old:  "- (void)onUpArrow {",
+		new: `// giode: UITextInput.
+
+- (id<UITextInputDelegate>)inputDelegate {
+	return giodeInputDelegate;
+}
+
+- (void)setInputDelegate:(id<UITextInputDelegate>)d {
+	giodeInputDelegate = d;
+}
+
+- (NSDictionary<NSAttributedStringKey, id> *)markedTextStyle {
+	return giodeMarkedTextStyle;
+}
+
+- (void)setMarkedTextStyle:(NSDictionary<NSAttributedStringKey, id> *)style {
+	giodeMarkedTextStyle = [style copy];
+}
+
+- (id<UITextInputTokenizer>)tokenizer {
+	if (giodeTokenizer == nil || giodeTokenizerView != self) {
+		giodeTokenizer = [[UITextInputStringTokenizer alloc] initWithTextInput:self];
+		giodeTokenizerView = self;
+	}
+	return giodeTokenizer;
+}
+
+- (UITextAutocorrectionType)autocorrectionType {
+	return UITextAutocorrectionTypeNo;
+}
+
+- (UITextSpellCheckingType)spellCheckingType {
+	return UITextSpellCheckingTypeNo;
+}
+
+- (void)giodeState:(long *)st {
+	if (self.handle == 0) {
+		st[0] = st[1] = st[4] = 0;
+		st[2] = st[3] = -1;
+		return;
+	}
+	giodeTextState(self.handle, st);
+}
+
+- (NSString *)textInRange:(UITextRange *)range {
+	NSInteger from, to;
+	if (self.handle == 0 || !giodeRange(range, &from, &to)) {
+		return @"";
+	}
+	return (__bridge_transfer NSString *)giodeTextIn(self.handle, from, to);
+}
+
+- (void)replaceRange:(UITextRange *)range withText:(NSString *)text {
+	NSInteger from, to;
+	if (self.handle == 0 || !giodeRange(range, &from, &to)) {
+		return;
+	}
+	giodeReplaceText(self.handle, from, to, (__bridge CFTypeRef)(text != nil ? text : @""));
+}
+
+- (UITextRange *)selectedTextRange {
+	long st[5];
+	[self giodeState:st];
+	return [GiodeTextRange from:st[0] to:st[1]];
+}
+
+- (void)setSelectedTextRange:(UITextRange *)range {
+	NSInteger from, to;
+	if (self.handle == 0 || !giodeRange(range, &from, &to)) {
+		return;
+	}
+	giodeSetSelection(self.handle, from, to);
+}
+
+- (UITextRange *)markedTextRange {
+	long st[5];
+	[self giodeState:st];
+	if (st[2] < 0) {
+		return nil;
+	}
+	return [GiodeTextRange from:st[2] to:st[3]];
+}
+
+- (void)setMarkedText:(NSString *)markedText selectedRange:(NSRange)selectedRange {
+	if (self.handle == 0) {
+		return;
+	}
+	long start = -1, end = -1;
+	if (selectedRange.location != NSNotFound) {
+		start = (long)selectedRange.location;
+		end = (long)(selectedRange.location + selectedRange.length);
+	}
+	giodeSetMarkedText(self.handle, (__bridge CFTypeRef)(markedText != nil ? markedText : @""), start, end);
+}
+
+- (void)unmarkText {
+	if (self.handle != 0) {
+		giodeUnmarkText(self.handle);
+	}
+}
+
+- (UITextPosition *)beginningOfDocument {
+	return [GiodeTextPosition at:0];
+}
+
+- (UITextPosition *)endOfDocument {
+	long st[5];
+	[self giodeState:st];
+	return [GiodeTextPosition at:st[4]];
+}
+
+- (UITextRange *)textRangeFromPosition:(UITextPosition *)fromPosition toPosition:(UITextPosition *)toPosition {
+	return [GiodeTextRange from:giodeOffset(fromPosition) to:giodeOffset(toPosition)];
+}
+
+- (UITextPosition *)positionFromPosition:(UITextPosition *)position offset:(NSInteger)offset {
+	long st[5];
+	[self giodeState:st];
+	NSInteger o = giodeOffset(position) + offset;
+	if (o < 0 || o > st[4]) {
+		return nil;
+	}
+	return [GiodeTextPosition at:o];
+}
+
+- (UITextPosition *)positionFromPosition:(UITextPosition *)position inDirection:(UITextLayoutDirection)direction offset:(NSInteger)offset {
+	switch (direction) {
+	case UITextLayoutDirectionLeft:
+		return [self positionFromPosition:position offset:-offset];
+	case UITextLayoutDirectionRight:
+		return [self positionFromPosition:position offset:offset];
+	default:
+		return nil;
+	}
+}
+
+- (NSComparisonResult)comparePosition:(UITextPosition *)position toPosition:(UITextPosition *)other {
+	NSInteger a = giodeOffset(position), b = giodeOffset(other);
+	if (a < b) {
+		return NSOrderedAscending;
+	}
+	if (a > b) {
+		return NSOrderedDescending;
+	}
+	return NSOrderedSame;
+}
+
+- (NSInteger)offsetFromPosition:(UITextPosition *)from toPosition:(UITextPosition *)toPosition {
+	return giodeOffset(toPosition) - giodeOffset(from);
+}
+
+- (UITextPosition *)positionWithinRange:(UITextRange *)range farthestInDirection:(UITextLayoutDirection)direction {
+	NSInteger from, to;
+	if (!giodeRange(range, &from, &to)) {
+		return nil;
+	}
+	if (direction == UITextLayoutDirectionLeft || direction == UITextLayoutDirectionUp) {
+		return [GiodeTextPosition at:from];
+	}
+	return [GiodeTextPosition at:to];
+}
+
+- (UITextRange *)characterRangeByExtendingPosition:(UITextPosition *)position inDirection:(UITextLayoutDirection)direction {
+	NSInteger o = giodeOffset(position);
+	if (direction == UITextLayoutDirectionLeft || direction == UITextLayoutDirectionUp) {
+		return [GiodeTextRange from:MAX(o-1, 0) to:o];
+	}
+	long st[5];
+	[self giodeState:st];
+	return [GiodeTextRange from:o to:MIN(o+1, (NSInteger)st[4])];
+}
+
+- (NSWritingDirection)baseWritingDirectionForPosition:(UITextPosition *)position inDirection:(UITextStorageDirection)direction {
+	return NSWritingDirectionNatural;
+}
+
+- (void)setBaseWritingDirection:(NSWritingDirection)writingDirection forRange:(UITextRange *)range {
+}
+
+- (CGRect)giodeCaret {
+	if (self.handle == 0) {
+		return CGRectZero;
+	}
+	double r[4];
+	giodeCaretRect(self.handle, r);
+	CGFloat s = self.contentScaleFactor;
+	if (s <= 0) {
+		s = 1;
+	}
+	return CGRectMake(r[0]/s, r[1]/s, MAX(r[2]/s, 2), r[3]/s);
+}
+
+- (CGRect)firstRectForRange:(UITextRange *)range {
+	return [self giodeCaret];
+}
+
+- (CGRect)caretRectForPosition:(UITextPosition *)position {
+	return [self giodeCaret];
+}
+
+- (NSArray<UITextSelectionRect *> *)selectionRectsForRange:(UITextRange *)range {
+	return @[];
+}
+
+- (UITextPosition *)closestPositionToPoint:(CGPoint)point {
+	return [self selectedTextRange].end;
+}
+
+- (UITextPosition *)closestPositionToPoint:(CGPoint)point withinRange:(UITextRange *)range {
+	return range.end;
+}
+
+- (UITextRange *)characterRangeAtPoint:(CGPoint)point {
+	return nil;
+}
+
+- (void)onUpArrow {`,
+	},
 }
