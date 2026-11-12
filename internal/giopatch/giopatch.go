@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "14"
+const revision = "15"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -1230,7 +1230,7 @@ var Android = append(append([]patch{}, androidPacing...), androidKeyRepeat...)
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
-var All = append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...)
+var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...)
 
 // windowsBackground fills a new Windows window with the app's background
 // color until its first frame: Gio skips the window's background erase,
@@ -1566,6 +1566,79 @@ func (w *window) SetInputHint(mode key.InputHint) {
 		file: "app/GioView.java",
 		old:  "\t\teditor.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN | EditorInfo.IME_FLAG_NO_EXTRACT_UI;\n",
 		new:  "\t\teditor.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN | EditorInfo.IME_FLAG_NO_EXTRACT_UI;\n\t\tif (giodeReturnDone()) {\n\t\t\t// giode: Done on single-line fields; it arrives as Enter.\n\t\t\teditor.imeOptions |= EditorInfo.IME_ACTION_DONE;\n\t\t}\n",
+	},
+}
+
+// iosKeyboardInset keeps an iOS view at its full height while the
+// keyboard shows, reporting the keyboard as a bottom inset instead (as
+// Android's window insets do), so the drawable never changes size when
+// the keyboard opens or closes: resizing it showed the last picture,
+// drawn at the shorter size, above an empty strip for a frame. Apps
+// laid out inside the insets (app.NewContext) stay above the keyboard;
+// edge-to-edge ones pad with the bottom inset. It also logs each
+// deleteBackward and insertText with GIODE_KEY_LOG set, to see on a
+// device whether UIKit repeats a held delete.
+var iosKeyboardInset = []patch{
+	{
+		file: "app/os_ios.m",
+		old: `	// Adjust view bounds to make room for the keyboard.
+	frame.size.height -= _keyboardHeight;
+`,
+		new: `	// giode: the view keeps its full height; the keyboard is a bottom
+	// inset (viewDrawParams), so the drawable doesn't change size when
+	// the keyboard comes or goes.
+`,
+	},
+	{
+		file: "app/os_ios.go",
+		old:  "\tparams.bottom = insets.bottom*scale;\n",
+		new:  "\t// giode: the keyboard covers the bottom of the full-height view.\n\tparams.bottom = MAX(insets.bottom, _keyboardHeight)*scale;\n",
+	},
+	{
+		file: "app/os_ios.go",
+		old:  "static struct drawParams viewDrawParams(CFTypeRef viewRef) {\n",
+		new:  "// The keyboard's height, in points (os_ios.m).\nextern CGFloat _keyboardHeight;\n\nstatic struct drawParams viewDrawParams(CFTypeRef viewRef) {\n",
+	},
+	{
+		file: "app/os_ios.m",
+		old: `- (void)deleteBackward {
+	onDeleteBackward(self.handle);
+}`,
+		new: `- (void)deleteBackward {
+	if (giodeKeyLog()) {
+		NSLog(@"giode: deleteBackward at %.3f", CACurrentMediaTime());
+	}
+	onDeleteBackward(self.handle);
+}`,
+	},
+	{
+		file: "app/os_ios.m",
+		old: `- (void)insertText:(NSString *)text {
+	onText(self.handle, (__bridge CFTypeRef)text);
+}`,
+		new: `- (void)insertText:(NSString *)text {
+	if (giodeKeyLog()) {
+		NSLog(@"giode: insertText %lu characters at %.3f", (unsigned long)text.length, CACurrentMediaTime());
+	}
+	onText(self.handle, (__bridge CFTypeRef)text);
+}`,
+	},
+	{
+		file: "app/os_ios.m",
+		old:  "CGFloat _keyboardHeight;\n",
+		new: `CGFloat _keyboardHeight;
+
+// giodeKeyLog reports whether GIODE_KEY_LOG is set: deleteBackward and
+// insertText are logged then (giode).
+static BOOL giodeKeyLog(void) {
+	static int on = -1;
+	if (on < 0) {
+		const char *v = getenv("GIODE_KEY_LOG");
+		on = v != NULL && v[0] != '\0';
+	}
+	return on;
+}
+`,
 	},
 }
 

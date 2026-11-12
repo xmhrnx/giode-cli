@@ -85,6 +85,18 @@ func TestPrepare(t *testing.T) {
 		}
 	}
 
+	// iOS reports the keyboard as a bottom inset rather than shrinking
+	// the view, and can log what the keyboard sends.
+	for _, want := range []string{"params.bottom = MAX(insets.bottom, _keyboardHeight)*scale;", "os_ios.m:giodeKeyLog()", "os_ios.m:// giode: the view keeps its full height"} {
+		file := "os_ios.go"
+		if f, w, ok := strings.Cut(want, ":"); ok && strings.HasSuffix(f, ".m") {
+			file, want = f, w
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, file)); err != nil || !strings.Contains(string(b), want) {
+			t.Errorf("%s lacks %q (%v)", file, want, err)
+		}
+	}
+
 	// gioui.org/shader picks the simulator's Metal libraries in
 	// simulator builds on any architecture.
 	cmd = exec.Command("go", "list", "-modfile="+modfile, "-f", "{{.Dir}}", "gioui.org/shader/gio")
