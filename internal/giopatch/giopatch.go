@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "16"
+const revision = "17"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -2148,13 +2148,11 @@ func giodeUnmarkText(h C.uintptr_t) {
 //export giodeCaretRect
 func giodeCaretRect(h C.uintptr_t, out *C.double) {
 	sel := viewFor(h).w.EditorState().Selection
-	r := f32.Rectangle{
-		Min: sel.Transform.Transform(sel.Pos.Sub(f32.Pt(0, sel.Ascent))),
-		Max: sel.Transform.Transform(sel.Pos.Add(f32.Pt(0, sel.Descent))),
-	}.Canon()
+	a := sel.Transform.Transform(sel.Pos.Sub(f32.Pt(0, sel.Ascent)))
+	b := sel.Transform.Transform(sel.Pos.Add(f32.Pt(0, sel.Descent)))
 	v := unsafe.Slice(out, 4)
-	v[0], v[1] = C.double(r.Min.X), C.double(r.Min.Y)
-	v[2], v[3] = C.double(r.Dx()), C.double(r.Dy())
+	v[0], v[1] = C.double(min(a.X, b.X)), C.double(min(a.Y, b.Y))
+	v[2], v[3] = C.double(max(a.X, b.X)-min(a.X, b.X)), C.double(max(a.Y, b.Y)-min(a.Y, b.Y))
 }
 `,
 	},
