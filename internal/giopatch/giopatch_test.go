@@ -87,9 +87,12 @@ func TestPrepare(t *testing.T) {
 
 	// iOS reports the keyboard as a bottom inset rather than shrinking
 	// the view, and can log what the keyboard sends.
-	for _, want := range []string{"params.bottom = MAX(insets.bottom, _keyboardHeight)*scale;", "os_ios.m:giodeKeyLog()", "os_ios.m:// giode: the view keeps its full height"} {
+	for _, want := range []string{"params.bottom = MAX(insets.bottom, _keyboardHeight)*scale;", "os_ios.m:giodeKeyLog()", "os_ios.m:// giode: the view keeps its full height",
+		// Keyboard hints, with giode's plain flag.
+		"w.giodeSetInputHint(h)", "os_ios.m:- (UIKeyboardType)keyboardType {", "os_ios.m:void giodeSetInputHint(CFTypeRef viewRef, int hint) {",
+		"os_android.go:mode &^= 0x80", "os_android.go:| 0x80000"} {
 		file := "os_ios.go"
-		if f, w, ok := strings.Cut(want, ":"); ok && strings.HasSuffix(f, ".m") {
+		if f, w, ok := strings.Cut(want, ":"); ok && (strings.HasSuffix(f, ".m") || strings.HasSuffix(f, ".go")) {
 			file, want = f, w
 		}
 		if b, err := os.ReadFile(filepath.Join(dir, file)); err != nil || !strings.Contains(string(b), want) {

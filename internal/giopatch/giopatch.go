@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "17"
+const revision = "18"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -1230,7 +1230,7 @@ var Android = append(append([]patch{}, androidPacing...), androidKeyRepeat...)
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
-var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...), iosTextInput...)
+var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...), iosTextInput...), inputPlain...)
 
 // windowsBackground fills a new Windows window with the app's background
 // color until its first frame: Gio skips the window's background erase,
@@ -1975,6 +1975,33 @@ func findModule(dir, path string) (module, error) {
 	return m, nil
 }
 
+// inputPlain gives Gio's keyboard hints giode's plain flag, 0x80: a
+// field that wants the text as typed (a terminal, code, names), with no
+// corrections, suggestions, capitals or smart punctuation. Android adds
+// TYPE_TEXT_FLAG_NO_SUGGESTIONS to the hint's text input type and drops
+// auto-correct and sentence capitals; iOS (in iosTextInput) turns off
+// capitals and smart punctuation and, as for every field, correction.
+// Unpatched Gio takes a flagged hint as plain text: Android's plain
+// text class, the web's text input with corrections off.
+var inputPlain = []patch{
+	{
+		file: "app/os_android.go",
+		old:  "func (w *window) SetInputHint(mode key.InputHint) {\n\tw.inputHint = mode\n",
+		new:  "func (w *window) SetInputHint(mode key.InputHint) {\n\tw.inputHint = mode\n\tplain := mode&0x80 != 0\n\tmode &^= 0x80\n",
+	},
+	{
+		file: "app/os_android.go",
+		old:  "\t\tcallVoidMethod(env, w.view, gioView.setInputHint, m)\n",
+		new: `		if plain && m&0xf == TYPE_CLASS_TEXT {
+			// giode: TYPE_TEXT_FLAG_NO_SUGGESTIONS, no auto-correct or
+			// capitals.
+			m = m&^(TYPE_TEXT_FLAG_AUTO_CORRECT|TYPE_TEXT_FLAG_CAP_SENTENCES) | 0x80000
+		}
+		callVoidMethod(env, w.view, gioView.setInputHint, m)
+`,
+	},
+}
+
 // iosTextInput makes Gio's iOS view a UITextInput rather than only a
 // UIKeyInput. UIKit repeats a held delete key only for text inputs (a
 // UIKeyInput view got one deleteBackward per press), and marked text
@@ -1995,6 +2022,7 @@ package app
 #include <UIKit/UIKit.h>
 
 __attribute__ ((visibility ("hidden"))) void giodeTextInputChanged(CFTypeRef viewRef);
+__attribute__ ((visibility ("hidden"))) void giodeSetInputHint(CFTypeRef viewRef, int hint);
 */
 import "C"
 
@@ -2018,6 +2046,15 @@ var giodeDeleteAt time.Time
 
 func giodeNoteDelete() {
 	giodeDeleteAt = time.Now()
+}
+
+// giodeSetInputHint sets the keyboard's type and traits from hint, with
+// giode's plain flag (0x80: no corrections, capitals or smart
+// punctuation) on top of Gio's hints.
+func (w *window) giodeSetInputHint(h key.InputHint) {
+	if w.view != 0 {
+		C.giodeSetInputHint(w.view, C.int(h))
+	}
 }
 
 func (w *window) giodeEditorStateChanged(old, new editorState) {
@@ -2163,6 +2200,11 @@ func giodeCaretRect(h C.uintptr_t, out *C.double) {
 	},
 	{
 		file: "app/os_ios.go",
+		old:  "func (w *window) SetInputHint(_ key.InputHint) {}\n",
+		new:  "func (w *window) SetInputHint(h key.InputHint) {\n\tw.giodeSetInputHint(h)\n}\n",
+	},
+	{
+		file: "app/os_ios.go",
 		old:  "\tw := viewFor(h)\n\tw.w.EditorInsert(nsstringToString(str))\n",
 		new:  "\tgiodeInsertText(viewFor(h), nsstringToString(str))\n",
 	},
@@ -2234,9 +2276,25 @@ static BOOL giodeRange(UITextRange *r, NSInteger *from, NSInteger *to) {
 }
 
 static __weak id<UITextInputDelegate> giodeInputDelegate;
+// giodeHint is Gio's keyboard hint for the focused editor, with giode's
+// plain flag (0x80).
+static int giodeHint;
 static NSDictionary<NSAttributedStringKey, id> *giodeMarkedTextStyle;
 static UITextInputStringTokenizer *giodeTokenizer;
 static __weak UIView *giodeTokenizerView;
+
+// giodeSetInputHint keeps hint for the keyboard traits and, when it
+// changed while the keyboard shows, has the keyboard read them again.
+void giodeSetInputHint(CFTypeRef viewRef, int hint) {
+	if (hint == giodeHint) {
+		return;
+	}
+	giodeHint = hint;
+	UIView *view = (__bridge UIView *)viewRef;
+	if (view.isFirstResponder) {
+		[view reloadInputViews];
+	}
+}
 
 // giodeTextInputChanged tells the keyboard that the text or selection
 // changed under it.
@@ -2288,6 +2346,45 @@ void giodeTextInputChanged(CFTypeRef viewRef) {
 
 - (UITextSpellCheckingType)spellCheckingType {
 	return UITextSpellCheckingTypeNo;
+}
+
+// giode: the keyboard follows Gio's hints (key.InputHint: any, text,
+// numeric, email, URL, telephone, password), and giode's plain flag
+// turns off capitals and smart punctuation.
+- (UIKeyboardType)keyboardType {
+	switch (giodeHint & 0x7f) {
+	case 2:
+		return UIKeyboardTypeNumbersAndPunctuation;
+	case 3:
+		return UIKeyboardTypeEmailAddress;
+	case 4:
+		return UIKeyboardTypeURL;
+	case 5:
+		return UIKeyboardTypePhonePad;
+	case 6:
+		return UIKeyboardTypeASCIICapable;
+	}
+	return UIKeyboardTypeDefault;
+}
+
+- (UITextAutocapitalizationType)autocapitalizationType {
+	int h = giodeHint & 0x7f;
+	if ((giodeHint & 0x80) || h >= 2) {
+		return UITextAutocapitalizationTypeNone;
+	}
+	return UITextAutocapitalizationTypeSentences;
+}
+
+- (UITextSmartQuotesType)smartQuotesType {
+	return (giodeHint & 0x80) || (giodeHint & 0x7f) >= 2 ? UITextSmartQuotesTypeNo : UITextSmartQuotesTypeDefault;
+}
+
+- (UITextSmartDashesType)smartDashesType {
+	return (giodeHint & 0x80) || (giodeHint & 0x7f) >= 2 ? UITextSmartDashesTypeNo : UITextSmartDashesTypeDefault;
+}
+
+- (UITextSmartInsertDeleteType)smartInsertDeleteType {
+	return (giodeHint & 0x80) ? UITextSmartInsertDeleteTypeNo : UITextSmartInsertDeleteTypeDefault;
 }
 
 - (void)giodeState:(long *)st {
