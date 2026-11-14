@@ -9,15 +9,29 @@ import (
 
 func TestDetect(t *testing.T) {
 	for text, want := range map[string]string{
-		"Permission is hereby granted, free of charge, to any person":               "MIT",
-		"Apache License\nVersion 2.0, January 2004":                                 "Apache-2.0",
-		"Redistribution and use in source and binary forms ... Neither the name of": "BSD-3-Clause",
-		"Redistribution and use in source and binary forms, with or without":        "BSD-2-Clause",
-		"This is free and unencumbered software released into the public domain.":   "Unlicense",
+		"Permission is hereby granted, free of charge, to any person":                                         "MIT",
+		"Apache License\nVersion 2.0, January 2004":                                                           "Apache-2.0",
+		"Redistribution and use in source and binary forms ... Neither the name of":                           "BSD-3-Clause",
+		"Redistribution and use in source and binary forms, with or without":                                  "BSD-2-Clause",
+		"This is free and unencumbered software released into the public domain.":                             "Unlicense",
+		"SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007":                                                "OFL-1.1",
+		"Redistribution and use in source and binary forms ... Neither the name of ... SIL Open Font License": "BSD-3-Clause AND OFL-1.1",
 		"": "",
 	} {
 		if got := Detect(text); got != want {
 			t.Errorf("Detect(%.30q) = %q, want %q", text, got, want)
+		}
+	}
+}
+
+// A font module's license files are found beside its code's.
+func TestFontLicenseFiles(t *testing.T) {
+	for name, want := range map[string]bool{
+		"LICENSE": true, "COPYING": true, "LICENSE-MIT": true, "SIL-LICENSE": true, "OFL.txt": true,
+		"LICENSE-GUST": true, "README.md": false, "license.go": false, "NOTICE": false,
+	} {
+		if got := isLicenseFile(name); got != want {
+			t.Errorf("%s: license file %v, want %v", name, got, want)
 		}
 	}
 }

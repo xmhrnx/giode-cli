@@ -87,7 +87,17 @@ func Collect(dir, pkg, tags string) ([]License, error) {
 
 type modInfo struct{ path, version, dir string }
 
-var licenseFile = regexp.MustCompile(`(?i)^(licen[cs]e|copying|unlicense)(\.(md|txt|rst))?$|^licen[cs]e[-_.]`)
+// licenseFile matches license files: LICENSE, COPYING, LICENSE-MIT, and
+// those named after what they cover, such as a font's SIL-LICENSE or
+// OFL.txt.
+var licenseFile = regexp.MustCompile(`(?i)^(licen[cs]e|copying|unlicense)(\.(md|txt|rst))?$|^licen[cs]e[-_.]|[-_]licen[cs]e(\.(md|txt))?$|^ofl(\.(md|txt))?$`)
+
+// isLicenseFile reports whether name is a license file, not code that
+// happens to be named after one (license.go).
+func isLicenseFile(name string) bool {
+	return licenseFile.MatchString(name) && !strings.HasSuffix(strings.ToLower(name), ".go")
+}
+
 var noticeFile = regexp.MustCompile(`(?i)^notice(\.(md|txt))?$`)
 
 // readLicense returns a module directory's license text, with its
@@ -106,7 +116,7 @@ func readLicense(dir string) string {
 			continue
 		}
 		switch {
-		case licenseFile.MatchString(e.Name()):
+		case isLicenseFile(e.Name()):
 			lic = append(lic, e.Name())
 		case noticeFile.MatchString(e.Name()):
 			notice = append(notice, e.Name())
@@ -122,9 +132,21 @@ func readLicense(dir string) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// Detect recognizes common licenses from their text.
+// Detect recognizes common licenses from their text. A module whose
+// code and font are licensed apart gets both: "BSD-3-Clause AND OFL-1.1".
 func Detect(text string) string {
 	t := strings.ToLower(strings.Join(strings.Fields(text), " "))
+	main := detect(t)
+	if strings.Contains(t, "sil open font license") {
+		if main == "" {
+			return "OFL-1.1"
+		}
+		return main + " AND OFL-1.1"
+	}
+	return main
+}
+
+func detect(t string) string {
 	switch {
 	case t == "":
 		return ""
