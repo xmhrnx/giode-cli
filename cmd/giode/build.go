@@ -580,6 +580,13 @@ func gogioOptions(c *config.Config, target string, o buildOpts) (gogio.Options, 
 		}
 		g.Extras = gogio.Extras{InfoPlist: plist, PrivacyManifest: privacy, Entitlements: c.IOSEntitlements(),
 			SplashColor: c.App.SplashColor, SplashColorLight: c.App.SplashColorLight}
+		if img := c.IOS.LaunchImage; img != "" {
+			img = c.Path(img)
+			if err := checkLaunchImage(img); err != nil {
+				return g, fmt.Errorf("ios.launch_image: %w", err)
+			}
+			g.Extras.LaunchImage = img
+		}
 		if c.App.ShareTarget {
 			ext := &gogio.ShareExtension{AppGroup: c.IOSAppGroup(), Scheme: c.IOSShareScheme()}
 			if target == "ios" {
@@ -731,6 +738,27 @@ func iosIcon(c *config.Config, g *gogio.Options) error {
 		return fmt.Errorf("ios.icon %s has transparent pixels, which iOS shows white: fill the whole square (iOS rounds the corners itself)", icon)
 	}
 	g.Icon = icon
+	return nil
+}
+
+// checkLaunchImage checks that path is a PNG that iOS's launch screen
+// can show: as the @3x image, at least 3 pixels each way.
+func checkLaunchImage(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	cfg, format, err := image.DecodeConfig(f)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if format != "png" {
+		return fmt.Errorf("%s is a %s image, not a PNG", path, format)
+	}
+	if cfg.Width < 3 || cfg.Height < 3 {
+		return fmt.Errorf("%s is %dx%d pixels; the @3x image needs at least 3x3", path, cfg.Width, cfg.Height)
+	}
 	return nil
 }
 

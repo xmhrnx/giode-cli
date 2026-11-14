@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"os"
 	"os/exec"
@@ -23,6 +25,7 @@ import (
 	"text/template"
 	"time"
 
+	"golang.org/x/image/draw"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -271,7 +274,7 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 		return err
 	}
 	_, iconErr := os.Stat(bi.iconPath)
-	if iconErr == nil || extras.SplashColor != "" {
+	if iconErr == nil || extras.SplashColor != "" || extras.LaunchImage != "" {
 		icon := ""
 		if iconErr == nil {
 			icon = bi.iconPath
@@ -310,7 +313,8 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 }
 
 // iosIcons builds an asset catalog - the app icon when icon isn't
-// empty, the launch screen's colour with a splash colour - and compiles
+// empty, the launch screen's colour with a splash colour and its image
+// with a launch image - and compiles
 // it with the Xcode command actool. It returns the asset plist file to
 // be merged into Info.plist.
 func iosIcons(bi *buildInfo, tmpDir, appDir, icon string) (string, error) {
@@ -329,6 +333,11 @@ func iosIcons(bi *buildInfo, tmpDir, appDir, icon string) (string, error) {
 		}
 		if err := os.WriteFile(filepath.Join(set, "Contents.json"), js, 0o600); err != nil {
 			return "", err
+		}
+	}
+	if extras.LaunchImage != "" {
+		if err := launchImageSet(filepath.Join(assets, launchImageName+".imageset"), extras.LaunchImage); err != nil {
+			return "", fmt.Errorf("launch image: %w", err)
 		}
 	}
 	args := []string{"--compile", appDir, "--platform", iosPlatformFor(bi.target, bi.simulator)}
@@ -415,6 +424,61 @@ func compileAssets(bi *buildInfo, tmpDir, assets string, args []string) (string,
 // catalog.
 const launchColorName = "GiodeLaunchBackground"
 
+// launchImageName names the launch screen's image in the asset
+// catalog.
+const launchImageName = "GiodeLaunchImage"
+
+// launchImageSet writes an asset catalog image set at dir from the PNG
+// at src: src as the @3x image, scaled to two and one thirds for @2x
+// and @1x.
+func launchImageSet(dir, src string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	img, _, err := image.Decode(f)
+	f.Close()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	b := img.Bounds()
+	type entry struct {
+		Idiom    string `json:"idiom"`
+		Filename string `json:"filename"`
+		Scale    string `json:"scale"`
+	}
+	var images []entry
+	for scale := 1; scale <= 3; scale++ {
+		name := fmt.Sprintf("launch@%dx.png", scale)
+		out := img
+		if scale < 3 {
+			w, h := max(1, (b.Dx()*scale+1)/3), max(1, (b.Dy()*scale+1)/3)
+			dst := image.NewNRGBA(image.Rect(0, 0, w, h))
+			draw.CatmullRom.Scale(dst, dst.Bounds(), img, b, draw.Src, nil)
+			out = dst
+		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, out); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), buf.Bytes(), 0o600); err != nil {
+			return err
+		}
+		images = append(images, entry{"universal", name, fmt.Sprintf("%dx", scale)})
+	}
+	js, err := json.MarshalIndent(map[string]any{
+		"images": images,
+		"info":   map[string]any{"author": "giode", "version": 1},
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "Contents.json"), js, 0o600)
+}
+
 // colorSetJSON is an asset catalog colour set: dark ("#RRGGBB") for
 // dark mode and the default, light for light mode when set.
 func colorSetJSON(dark, light string) ([]byte, error) {
@@ -482,8 +546,9 @@ func buildInfoPlist(bi *buildInfo) string {
 		SupportPlatform string
 		Schemes         []string
 		// SplashColor names the launch screen's colour set, when there's
-		// a splash colour.
-		SplashColor string
+		// a splash colour, and LaunchImage its image set, when there's a
+		// launch image.
+		SplashColor, LaunchImage string
 	}{
 		AppName:         appName,
 		AppID:           bi.appID,
@@ -496,6 +561,9 @@ func buildInfoPlist(bi *buildInfo) string {
 	}
 	if extras.SplashColor != "" {
 		manifestSrc.SplashColor = launchColorName
+	}
+	if extras.LaunchImage != "" {
+		manifestSrc.LaunchImage = launchImageName
 	}
 
 	tmpl, err := template.New("manifest").Parse(`<?xml version="1.0" encoding="UTF-8"?>
@@ -518,7 +586,7 @@ func buildInfoPlist(bi *buildInfo) string {
 	<string>{{.Version}}</string>
 	<key>CFBundleVersion</key>
 	<string>{{.VersionCode}}</string>
-	{{- if not .SplashColor}}
+	{{- if not (or .SplashColor .LaunchImage)}}
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	{{- end}}
@@ -561,10 +629,18 @@ func buildInfoPlist(bi *buildInfo) string {
 	<key>DTXcodeBuild</key>
 	<string>10G8</string>
 	<key>UILaunchScreen</key>
-	{{- if .SplashColor}}
+	{{- if or .SplashColor .LaunchImage}}
 	<dict>
+		{{- if .SplashColor}}
 		<key>UIColorName</key>
 		<string>{{.SplashColor}}</string>
+		{{- end}}
+		{{- if .LaunchImage}}
+		<key>UIImageName</key>
+		<string>{{.LaunchImage}}</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<true/>
+		{{- end}}
 	</dict>
 	{{- else}}
 	<true/>

@@ -52,3 +52,19 @@ func TestIOSIcon(t *testing.T) {
 		t.Errorf("a transparent ios.icon: err %v", err)
 	}
 }
+
+// ios.launch_image must be a PNG.
+func TestCheckLaunchImage(t *testing.T) {
+	dir := t.TempDir()
+	if err := checkLaunchImage(writeIcon(t, dir, "logo.png", 0)); err != nil {
+		t.Errorf("PNG refused: %v", err)
+	}
+	if err := checkLaunchImage(filepath.Join(dir, "missing.png")); err == nil {
+		t.Error("missing file accepted")
+	}
+	txt := filepath.Join(dir, "logo.txt")
+	os.WriteFile(txt, []byte("not an image"), 0o600)
+	if err := checkLaunchImage(txt); err == nil {
+		t.Error("text file accepted")
+	}
+}

@@ -153,6 +153,7 @@ libraries = ["libs/vendor.aar"]   # local .aar and .jar files built in
 [ios]
 min_os = 15
 icon = "assets/icon-ios.png"  # opaque, full-bleed: iOS rounds the corners (default app.icon)
+launch_image = "assets/logo.png"  # centred on the launch screen, the @3x image
 profile = "Agent.mobileprovision"   # for device builds ($GIODE_IOS_PROFILE overrides)
 push = "production"           # giode/push: aps-environment (development or production)
 share_profile = "AgentShare.mobileprovision"  # app.share_target's extension ($GIODE_IOS_SHARE_PROFILE)
@@ -395,12 +396,18 @@ it to `linux.snap.channel` (stable by default) when the repository has the
 connect on its own, such as `network-observe` and `removable-media`, need a request in the
 Snap forum, or users connect them with `snap connect`.
 
-## Launch screen colour
+## Launch screen
 
 `splash_color` fills the screen from launch until the app's first frame, instead of white:
 Android's window background and its Android 12+ splash screen (with the app icon on it),
 and iOS's launch screen, through a named colour in the app's asset catalog.
 `splash_color_light` is the light mode colour; `splash_color` is then the dark mode one.
+
+`ios.launch_image` puts a PNG, such as a logo, in the middle of iOS's launch screen, over
+`splash_color`. It's the @3x image, shown at a third of its pixel size in points (600x600
+pixels make 200x200 points, about a third of a phone's width), and scaled down for @2x and @1x
+screens. iOS caches launch screens: after changing one, delete the app and reinstall it (on a
+simulator, also restart it) to see the new one.
 
 ## Share target
 

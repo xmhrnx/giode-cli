@@ -177,6 +177,9 @@ type Extras struct {
 	// screen, and iOS's launch screen. SplashColorLight, when set, is
 	// used instead in light mode. Empty keeps white.
 	SplashColor, SplashColorLight string
+	// LaunchImage is a PNG shown centred on iOS's launch screen: the
+	// @3x image, scaled down for @2x and @1x.
+	LaunchImage string
 	// ShareExtension, when set, builds a share extension into iOS apps.
 	ShareExtension *ShareExtension
 }

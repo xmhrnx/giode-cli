@@ -205,6 +205,11 @@ type IOS struct {
 	// transparency: iOS rounds the corners itself and shows transparent
 	// pixels white. Without it iOS takes app.icon.
 	Icon string `toml:"icon"`
+	// LaunchImage is a PNG shown centred on the launch screen, over
+	// app.splash_color, until the first frame. It's the @3x image: it
+	// shows at a third of its pixel size in points (600x600 pixels make
+	// 200x200 points), scaled down for @2x and @1x screens.
+	LaunchImage string `toml:"launch_image"`
 	// Usage holds the texts iOS shows when asking for a permission, by
 	// short name: camera, microphone, speech, photos, photos_add,
 	// location, location_always, contacts, calendar, reminders,
