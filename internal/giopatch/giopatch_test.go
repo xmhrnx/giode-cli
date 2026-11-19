@@ -144,6 +144,7 @@ func main() {
 	app.GiodeSetBackground(0x11, 0x22, 0x33, true)
 	app.GiodeSetReturnKeyDone(true)
 	new(app.Window).GiodeInject(nil)
+	app.GiodeStartDrag([]string{"/tmp/a"}, "text", func(bool) {})
 }
 `)
 	envs := [][]string{{"GOOS=windows"}, {"GOOS=js", "GOARCH=wasm"}}

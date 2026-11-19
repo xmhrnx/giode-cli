@@ -436,6 +436,9 @@ patches, adding the `giode_gio` and `giode_gio2` build tags:
 - **File drags on Linux**: XDND on X11 and `wl_data_device`'s drag and drop on Wayland,
   for `Config.OnFileDrop` and `OnFileDrag`. Gio's event loop reads those protocols'
   messages, so they can't be handled outside it.
+- **Dragging out on Linux**: an XDND source on X11 and `wl_data_device.start_drag` on
+  Wayland, for `Draggable.Export`: a drag leaving the window becomes the desktop's, with
+  files (`text/uri-list`) and text for other applications.
 - **Minimized windows on Windows**: Gio took a minimized window for a restored one, so
   `WindowMinimized`, desktop `OnBackground` and the way back from them never came.
 - **Fullscreen on Windows**: Gio showed a fullscreen window maximized without its frame,
