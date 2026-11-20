@@ -2182,6 +2182,10 @@ func (w *window) SetInputHint(mode key.InputHint) {
 // builds have the earlier tags too.
 const TagA11y = "giode_gio6"
 
+// TagAutofill is the build tag of builds against patches with
+// app.GiodeSetAutofill (revision 22 on).
+const TagAutofill = "giode_gio7"
+
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
