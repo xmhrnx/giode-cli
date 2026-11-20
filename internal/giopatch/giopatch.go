@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "22"
+const revision = "23"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -2189,7 +2189,7 @@ const TagAutofill = "giode_gio7"
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
-var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...), iosTextInput...), inputPlain...), dragSource...), a11yAndroid...), autofill...)
+var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...), iosTextInput...), inputPlain...), dragSource...), a11yAndroid...), autofill...), linuxWindow...)
 
 // windowsBackground fills a new Windows window with the app's background
 // color until its first frame: Gio skips the window's background erase,
