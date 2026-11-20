@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "20"
+const revision = "21"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -1908,7 +1908,7 @@ func Java_org_gioui_GioView_giodeA11yAction(env *C.JNIEnv, class C.jclass, id, a
 }
 
 // giodeAnnounce is GioView.giodeAnnounce, looked up on first use.
-var giodeAnnounce C.jmethodID
+var giodeAnnounce, giodeSelection C.jmethodID
 
 // giodeA11yFrame tells giode's provider whether a screen reader is on,
 // and the screen reader what changed (giode).
@@ -1920,6 +1920,16 @@ func (w *window) giodeA11yFrame(env *C.JNIEnv, active bool) {
 	ids, texts, assertive := giodeA11y.A11yChanged()
 	for _, id := range ids {
 		callVoidMethod(env, w.view, gioView.sendA11yChange, jvalue(C.jint(id)))
+	}
+	if sel, ok := giodeA11y.(interface {
+		A11ySelection() (id, start, end, count int, ok bool)
+	}); ok {
+		if id, start, end, count, moved := sel.A11ySelection(); moved {
+			if giodeSelection == nil {
+				giodeSelection = getMethodID(env, getObjectClass(env, w.view), "giodeSelection", "(IIII)V")
+			}
+			callVoidMethod(env, w.view, giodeSelection, jvalue(C.jint(id)), jvalue(C.jint(start)), jvalue(C.jint(end)), jvalue(C.jint(count)))
+		}
 	}
 	if len(texts) == 0 {
 		return
@@ -2067,6 +2077,9 @@ func (w *window) SetInputHint(mode key.InputHint) {
 			if (o.optBoolean("item")) {
 				info.setCollectionItemInfo(AccessibilityNodeInfo.CollectionItemInfo.obtain(o.optInt("row"), 1, 0, 1, o.optBoolean("heading"), o.optBoolean("selected")));
 			}
+			if (o.has("selStart") && o.has("selEnd")) {
+				info.setTextSelection(o.optInt("selStart"), o.optInt("selEnd"));
+			}
 			org.json.JSONArray acts = o.optJSONArray("actions");
 			if (acts != null) {
 				for (int i = 0; i < acts.length(); i++) {
@@ -2104,6 +2117,14 @@ func (w *window) SetInputHint(mode key.InputHint) {
 			if (cs != null) {
 				arg = cs.toString();
 			}
+			if (action == AccessibilityNodeInfo.ACTION_SET_SELECTION) {
+				int start = arguments.getInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, -1);
+				int end = arguments.getInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, -1);
+				if (start < 0 || end < 0) {
+					return false;
+				}
+				arg = start + "," + end;
+			}
 		}
 		boolean ok = giodeA11yAction(viewId, action, arg);
 		if (ok && action == AccessibilityNodeInfo.ACTION_CLICK) {
@@ -2130,6 +2151,19 @@ func (w *window) SetInputHint(mode key.InputHint) {
 			sendA11yEvent(AccessibilityEvent.TYPE_VIEW_HOVER_EXIT, giodeHoverId);
 		}
 		giodeHoverId = id;
+	}
+
+	// giodeSelection tells TalkBack a text field's caret or selection
+	// moved: from is the anchor, to the caret, in UTF-16 units.
+	void giodeSelection(int viewId, int from, int to, int count) {
+		if (!accessManager.isEnabled()) {
+			return;
+		}
+		AccessibilityEvent event = obtainA11yEvent(AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED, viewId);
+		event.setFromIndex(from);
+		event.setToIndex(to);
+		event.setItemCount(count);
+		getParent().requestSendAccessibilityEvent(this, event);
 	}
 
 	void giodeAnnounce(String text, boolean assertive) {
