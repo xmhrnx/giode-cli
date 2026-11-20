@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "21"
+const revision = "22"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -2185,7 +2185,7 @@ const TagA11y = "giode_gio6"
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
-var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...), iosTextInput...), inputPlain...), dragSource...), a11yAndroid...)
+var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...), iosTextInput...), inputPlain...), dragSource...), a11yAndroid...), autofill...)
 
 // windowsBackground fills a new Windows window with the app's background
 // color until its first frame: Gio skips the window's background erase,
@@ -2966,6 +2966,179 @@ var inputPlain = []patch{
 // text or selection under it, except for a second after a delete, so a
 // held delete isn't interrupted (as on Android). Autocorrection and
 // spell checking stay off, as they were.
+// autofill tells the platforms what a focused field holds, for
+// password managers and the keyboard's AutoFill:
+// app.GiodeSetAutofill. iOS reads it as the text content type (in
+// iosTextInput); Android's view joins the autofill framework for the
+// focused field, with its hints, value and autofill.
+var autofill = []patch{
+	{
+		file: "app/giode_autofill.go",
+		new: `// Added by giode's Gio patches: what the focused field holds.
+
+package app
+
+import "sync/atomic"
+
+var giodeAutofill atomic.Int32
+
+// GiodeSetAutofill sets what the focused text field holds, for
+// password managers and AutoFill: 0 nothing in particular, 1 user name,
+// 2 password, 3 new password, 4 email address, 5 one-time code, 6 name,
+// 7 phone number, 8 street address, 9 postal code. Call it when the
+// focused field changes.
+func GiodeSetAutofill(kind int) {
+	if giodeAutofill.Swap(int32(kind)) != int32(kind) {
+		giodeAutofillChanged()
+	}
+}
+`,
+	},
+	{
+		file: "app/giode_autofill_other.go",
+		new: `// Added by giode's Gio patches.
+
+//go:build !android && !ios
+
+package app
+
+func giodeAutofillChanged() {}
+`,
+	},
+	{
+		file: "app/os_ios.go",
+		old:  "func giodeReturnKeyChanged() {\n\tC.giodeReloadKeyboard()\n}\n",
+		new: `func giodeReturnKeyChanged() {
+	C.giodeReloadKeyboard()
+}
+
+// giodeAutofillChanged has the keyboard read the field's content type
+// again (giode).
+func giodeAutofillChanged() {
+	C.giodeReloadKeyboard()
+}
+
+//export giodeAutofillKind
+func giodeAutofillKind() C.int {
+	return C.int(giodeAutofill.Load())
+}
+`,
+	},
+	{
+		file: "app/os_android.go",
+		old:  "func (w *window) SetInputHint(mode key.InputHint) {\n",
+		new: `// giodeAutofillChanged restarts the keyboards' input connections and
+// tells the autofill framework the field changed (giode).
+func giodeAutofillChanged() {
+	runOnMain(func(env *C.JNIEnv) {
+		for _, w := range windows {
+			if w.view != 0 {
+				callVoidMethod(env, w.view, gioView.restartInput)
+				m := getMethodID(env, getObjectClass(env, w.view), "giodeAutofillEntered", "()V")
+				callVoidMethod(env, w.view, m)
+			}
+		}
+	})
+}
+
+//export Java_org_gioui_GioView_giodeAutofillKind
+func Java_org_gioui_GioView_giodeAutofillKind(env *C.JNIEnv, class C.jclass) C.jint {
+	return C.jint(giodeAutofill.Load())
+}
+
+// Java_org_gioui_GioView_giodeAutofill puts a password manager's value
+// in the focused field, in place of what it held.
+//
+//export Java_org_gioui_GioView_giodeAutofill
+func Java_org_gioui_GioView_giodeAutofill(env *C.JNIEnv, class C.jclass, handle C.jlong, jtext C.jstring) {
+	w := cgo.Handle(handle).Value().(*window)
+	st := w.callbacks.EditorState()
+	end := max(st.Snippet.Range.End, st.Snippet.Range.Start, st.Selection.Range.Start, st.Selection.Range.End)
+	text := goString(env, jtext)
+	w.callbacks.EditorReplace(key.Range{Start: 0, End: end}, text)
+	n := len([]rune(text))
+	w.callbacks.SetEditorSelection(key.Range{Start: n, End: n})
+}
+
+func (w *window) SetInputHint(mode key.InputHint) {
+`,
+	},
+	{
+		file: "app/GioView.java",
+		old:  "\t@Override public InputConnection onCreateInputConnection(EditorInfo editor) {\n",
+		new: `	// giode: the focused text field in the autofill framework, for
+	// password managers and the keyboard's suggestions.
+	static private native int giodeAutofillKind();
+	static private native void giodeAutofill(long handle, String text);
+
+	private static String[] giodeAutofillHints(int kind) {
+		switch (kind) {
+		case 1: return new String[]{View.AUTOFILL_HINT_USERNAME};
+		case 2: return new String[]{View.AUTOFILL_HINT_PASSWORD};
+		case 3: return new String[]{"newPassword"};
+		case 4: return new String[]{View.AUTOFILL_HINT_EMAIL_ADDRESS};
+		case 5: return new String[]{"smsOTPCode"};
+		case 6: return new String[]{View.AUTOFILL_HINT_NAME};
+		case 7: return new String[]{View.AUTOFILL_HINT_PHONE};
+		case 8: return new String[]{View.AUTOFILL_HINT_POSTAL_ADDRESS};
+		case 9: return new String[]{View.AUTOFILL_HINT_POSTAL_CODE};
+		}
+		return null;
+	}
+
+	void giodeAutofillEntered() {
+		if (Build.VERSION.SDK_INT < 26) {
+			return;
+		}
+		android.view.autofill.AutofillManager afm = getContext().getSystemService(android.view.autofill.AutofillManager.class);
+		if (afm == null) {
+			return;
+		}
+		if (giodeAutofillKind() != 0) {
+			setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_YES);
+			afm.notifyViewEntered(this);
+		} else {
+			afm.notifyViewExited(this);
+		}
+	}
+
+	@Override public int getAutofillType() {
+		return giodeAutofillKind() != 0 ? View.AUTOFILL_TYPE_TEXT : View.AUTOFILL_TYPE_NONE;
+	}
+
+	@Override public String[] getAutofillHints() {
+		return giodeAutofillHints(giodeAutofillKind());
+	}
+
+	@Override public android.view.autofill.AutofillValue getAutofillValue() {
+		if (giodeAutofillKind() == 0) {
+			return null;
+		}
+		return android.view.autofill.AutofillValue.forText(getSnippet().snippet);
+	}
+
+	@Override public void autofill(android.view.autofill.AutofillValue value) {
+		if (value != null && value.isText() && nhandle != 0) {
+			giodeAutofill(nhandle, value.getTextValue().toString());
+		}
+	}
+
+	@Override public void onProvideAutofillStructure(android.view.ViewStructure s, int flags) {
+		super.onProvideAutofillStructure(s, flags);
+		int kind = giodeAutofillKind();
+		if (kind != 0 && Build.VERSION.SDK_INT >= 26) {
+			s.setAutofillHints(giodeAutofillHints(kind));
+			s.setAutofillType(View.AUTOFILL_TYPE_TEXT);
+			s.setAutofillValue(getAutofillValue());
+			s.setInputType(this.keyboardHint);
+		}
+	}
+
+	@Override public InputConnection onCreateInputConnection(EditorInfo editor) {
+`,
+	},
+}
+
 var iosTextInput = []patch{
 	{
 		file: "app/giode_textinput_ios.go",
@@ -3295,12 +3468,36 @@ void giodeTextInputChanged(CFTypeRef viewRef) {
 	return giodeTokenizer;
 }
 
+// giode: text fields get the keyboard's corrections and predictions;
+// numbers, addresses, passwords and plain fields don't.
 - (UITextAutocorrectionType)autocorrectionType {
-	return UITextAutocorrectionTypeNo;
+	return (giodeHint & 0x80) || (giodeHint & 0x7f) >= 2 || giodeAutofillKind() != 0 ? UITextAutocorrectionTypeNo : UITextAutocorrectionTypeDefault;
 }
 
 - (UITextSpellCheckingType)spellCheckingType {
-	return UITextSpellCheckingTypeNo;
+	return (giodeHint & 0x80) || (giodeHint & 0x7f) >= 2 || giodeAutofillKind() != 0 ? UITextSpellCheckingTypeNo : UITextSpellCheckingTypeDefault;
+}
+
+// giode: what the field holds, for the keyboard's AutoFill of
+// passwords, one-time codes and contact details.
+- (UITextContentType)textContentType {
+	switch (giodeAutofillKind()) {
+	case 1: return UITextContentTypeUsername;
+	case 2: return UITextContentTypePassword;
+	case 3: return UITextContentTypeNewPassword;
+	case 4: return UITextContentTypeEmailAddress;
+	case 5: return UITextContentTypeOneTimeCode;
+	case 6: return UITextContentTypeName;
+	case 7: return UITextContentTypeTelephoneNumber;
+	case 8: return UITextContentTypeFullStreetAddress;
+	case 9: return UITextContentTypePostalCode;
+	}
+	return (giodeHint & 0x7f) == 6 ? UITextContentTypePassword : nil;
+}
+
+- (BOOL)isSecureTextEntry {
+	int k = giodeAutofillKind();
+	return k == 2 || k == 3 || (k == 0 && (giodeHint & 0x7f) == 6);
 }
 
 // giode: the keyboard follows Gio's hints (key.InputHint: any, text,
