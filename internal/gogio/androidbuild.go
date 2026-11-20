@@ -294,8 +294,12 @@ func compileAndroid(tmpDir string, tools *androidTools, bi *buildInfo) (err erro
 		if symbolsDir != "" {
 			strip = ""
 		}
+		// giode: -checklinkname=0 lets pion's WebRTC (giode/rtc) link:
+		// its Android network listing (github.com/wlynxg/anet) reaches
+		// into the net package, which Go 1.23's linker refuses
+		// otherwise.
 		cmd := goCommand("build",
-			"-ldflags="+strip+"-extldflags \"-Wl,-z,max-page-size=65536\" "+bi.ldflags,
+			"-ldflags="+strip+"-checklinkname=0 -extldflags \"-Wl,-z,max-page-size=65536\" "+bi.ldflags,
 			"-buildmode=c-shared",
 			"-tags", bi.tags,
 			"-o", libFile,
