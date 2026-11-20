@@ -99,6 +99,11 @@ type App struct {
 	// running in the background. VoIP pushes also need ios.push. On
 	// Android the telecom package's manifest declares what it needs.
 	Calls bool `toml:"calls"`
+	// BackgroundTasks names the app's background tasks (giode/background):
+	// on iOS they're permitted as BGTaskScheduler identifiers
+	// <app.id>.<name>, with the fetch and processing background modes.
+	// Android needs nothing here.
+	BackgroundTasks []string `toml:"background_tasks"`
 	// Publisher is who makes the app, shown by installers and in
 	// Windows' list of installed apps; Description a one-line summary;
 	// Website the app's home page.

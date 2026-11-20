@@ -141,6 +141,9 @@ func (c *Config) IOSPlist() (string, error) {
 	if c.App.Calls {
 		modes = append(modes, "voip", "audio")
 	}
+	if len(c.App.BackgroundTasks) > 0 {
+		modes = append(modes, "fetch", "processing")
+	}
 	if len(modes) > 0 || c.App.ShareTarget {
 		raw = make(map[string]any, len(c.IOS.Plist)+3)
 		for k, v := range c.IOS.Plist {
@@ -151,6 +154,16 @@ func (c *Config) IOSPlist() (string, error) {
 		// Where giode looks for what the share extension received.
 		raw["GiodeAppGroup"] = c.IOSAppGroup()
 		raw["GiodeShareScheme"] = c.IOSShareScheme()
+	}
+	if len(c.App.BackgroundTasks) > 0 {
+		ids := make([]any, 0, len(c.App.BackgroundTasks))
+		if old, ok := raw["BGTaskSchedulerPermittedIdentifiers"].([]any); ok {
+			ids = append(ids, old...)
+		}
+		for _, t := range c.App.BackgroundTasks {
+			ids = append(ids, c.App.ID+"."+t)
+		}
+		raw["BGTaskSchedulerPermittedIdentifiers"] = ids
 	}
 	if len(modes) > 0 {
 		// Add to the background modes ios.plist sets, once each.

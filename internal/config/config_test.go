@@ -116,6 +116,30 @@ UIBackgroundModes = ["audio", "fetch"]
 	}
 }
 
+func TestIOSPlistBackgroundTasks(t *testing.T) {
+	c, err := load(t, `
+[app]
+name = "Mail"
+id = "com.example.mail"
+background_tasks = ["sync", "cleanup"]
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.IOSPlist()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"<key>BGTaskSchedulerPermittedIdentifiers</key>\n\t<array><string>com.example.mail.sync</string><string>com.example.mail.cleanup</string></array>",
+		"<key>UIBackgroundModes</key>\n\t<array><string>fetch</string><string>processing</string></array>",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("plist lacks %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestValidate(t *testing.T) {
 	for name, src := range map[string]string{
 		"missing name":       "[app]\nid = \"com.example.a\"\n",
