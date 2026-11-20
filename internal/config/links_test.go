@@ -50,8 +50,9 @@ func TestLinks(t *testing.T) {
 	if det.AppIDs[0] != "ABCDE12345.com.example.agent" || len(det.Components) != 2 || det.Components[0]["/"] != "/app/*" {
 		t.Errorf("aasa %s", aasa)
 	}
-	al, _ := c.AssetLinks([]string{"AA:BB"})
-	if !strings.Contains(string(al), `"package_name": "com.example.agent"`) || !strings.Contains(string(al), `"AA:BB"`) {
+	al, _ := c.AssetLinks(c.LinkHosts()[0], []string{"AA:BB"})
+	if !strings.Contains(string(al), `"package_name": "com.example.agent"`) || !strings.Contains(string(al), `"AA:BB"`) ||
+		!strings.Contains(string(al), "handle_all_urls") || strings.Contains(string(al), "get_login_creds") {
 		t.Errorf("assetlinks %s", al)
 	}
 	if _, err := load(t, "[app]\nname = \"A\"\nid = \"com.example.a\"\nlinks = [\"http://example.com\"]\n"); err == nil {
@@ -90,5 +91,31 @@ func TestPushEntitlements(t *testing.T) {
 	c.IOS.Push = "prod"
 	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "ios.push") {
 		t.Errorf("validate: %v", err)
+	}
+}
+
+func TestPasskeyDomains(t *testing.T) {
+	c, err := load(t, "[app]\nname = \"A\"\nid = \"com.example.a\"\nlinks = [\"https://example.com/app/*\"]\npasskeys = [\"example.com\", \"login.example.org\"]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ents := c.AppleEntitlements()["com.apple.developer.associated-domains"].([]string)
+	if strings.Join(ents, " ") != "applinks:example.com webcredentials:example.com webcredentials:login.example.org" {
+		t.Errorf("entitlements %v", ents)
+	}
+	if h := c.WellKnownHosts(); strings.Join(h, " ") != "example.com login.example.org" {
+		t.Errorf("hosts %v", h)
+	}
+	al, _ := c.AssetLinks("example.com", nil)
+	if !strings.Contains(string(al), "handle_all_urls") || !strings.Contains(string(al), "get_login_creds") {
+		t.Errorf("assetlinks %s", al)
+	}
+	al, _ = c.AssetLinks("login.example.org", nil)
+	if strings.Contains(string(al), "handle_all_urls") || !strings.Contains(string(al), "get_login_creds") {
+		t.Errorf("passkey-only assetlinks %s", al)
+	}
+	aasa, _ := c.AppleAppSiteAssociation("login.example.org", "TEAM")
+	if strings.Contains(string(aasa), "applinks") || !strings.Contains(string(aasa), `"TEAM.com.example.a"`) || !strings.Contains(string(aasa), "webcredentials") {
+		t.Errorf("aasa %s", aasa)
 	}
 }

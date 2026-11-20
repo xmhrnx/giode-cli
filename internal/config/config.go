@@ -82,6 +82,11 @@ type App struct {
 	// https://example.com/app/*. giode links writes the files the site
 	// must serve to prove the app may.
 	Links []string `toml:"links"`
+	// Passkeys are the domains (relying party IDs, like example.com)
+	// the app creates and uses passkeys for: the webcredentials
+	// associated domain on iOS and macOS, and the get_login_creds
+	// relation giode links writes into assetlinks.json for Android.
+	Passkeys []string `toml:"passkeys"`
 	// ShareTarget offers the app in the system share sheet, for any
 	// files and text, which reach giode.Config.OnShareReceived. On
 	// Android it registers for ACTION_SEND and ACTION_SEND_MULTIPLE; on

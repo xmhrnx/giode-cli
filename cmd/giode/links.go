@@ -16,11 +16,11 @@ const linksUsage = `
 Usage: giode links [options]
 
 Writes the files a website serves to let the app open its links
-(app.links in giode.toml) instead of the browser, one directory per host
-under dist/links:
+(app.links in giode.toml) instead of the browser, and use its passkeys
+(app.passkeys), one directory per host under dist/links:
 
-	<host>/.well-known/assetlinks.json            Android App Links
-	<host>/.well-known/apple-app-site-association iOS and macOS universal links
+	<host>/.well-known/assetlinks.json            Android App Links and passkeys
+	<host>/.well-known/apple-app-site-association iOS and macOS universal links and passkeys
 
 Upload each host's .well-known directory to its site, served over https
 with content type application/json and no redirects.
@@ -42,8 +42,8 @@ func cmdLinks(args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(c.App.Links) == 0 {
-		return errors.New("giode.toml has no app.links")
+	if len(c.App.Links) == 0 && len(c.App.Passkeys) == 0 {
+		return errors.New("giode.toml has no app.links or app.passkeys")
 	}
 	fps := append([]string{}, c.Android.Fingerprints...)
 	if c.Android.Keystore != "" {
@@ -61,12 +61,12 @@ func cmdLinks(args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, host := range c.LinkHosts() {
+	for _, host := range c.WellKnownHosts() {
 		wk := filepath.Join(out, host, ".well-known")
 		if err := os.MkdirAll(wk, 0o755); err != nil {
 			return err
 		}
-		al, err := c.AssetLinks(fps)
+		al, err := c.AssetLinks(host, fps)
 		if err != nil {
 			return err
 		}

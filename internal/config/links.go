@@ -47,6 +47,36 @@ func (c *Config) LinkHosts() []string {
 	return hosts
 }
 
+// PasskeyHosts returns app.passkeys' domains, sorted.
+func (c *Config) PasskeyHosts() []string {
+	seen := map[string]bool{}
+	var hosts []string
+	for _, h := range c.App.Passkeys {
+		h = strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(h, "https://"), "webcredentials:"), "/")
+		if h != "" && !seen[h] {
+			seen[h] = true
+			hosts = append(hosts, h)
+		}
+	}
+	sort.Strings(hosts)
+	return hosts
+}
+
+// WellKnownHosts returns the hosts giode links writes files for: those
+// of app.links and app.passkeys.
+func (c *Config) WellKnownHosts() []string {
+	seen := map[string]bool{}
+	var hosts []string
+	for _, h := range append(c.LinkHosts(), c.PasskeyHosts()...) {
+		if !seen[h] {
+			seen[h] = true
+			hosts = append(hosts, h)
+		}
+	}
+	sort.Strings(hosts)
+	return hosts
+}
+
 // AndroidActivityXML returns the App Links intent filters for
 // app.links, verified against each host's assetlinks.json.
 func (c *Config) AndroidActivityXML() string {
@@ -94,14 +124,18 @@ func (c *Config) MacOSEntitlements() map[string]any {
 }
 
 // AppleEntitlements returns the entitlements giode adds to iOS and
-// macOS signing alike: associated domains for app.links.
+// macOS signing alike: associated domains for app.links and
+// app.passkeys.
 func (c *Config) AppleEntitlements() map[string]any {
 	ents := map[string]any{}
-	if hosts := c.LinkHosts(); len(hosts) > 0 {
-		var domains []string
-		for _, h := range hosts {
-			domains = append(domains, "applinks:"+h)
-		}
+	var domains []string
+	for _, h := range c.LinkHosts() {
+		domains = append(domains, "applinks:"+h)
+	}
+	for _, h := range c.PasskeyHosts() {
+		domains = append(domains, "webcredentials:"+h)
+	}
+	if len(domains) > 0 {
 		ents["com.apple.developer.associated-domains"] = domains
 	}
 	return ents
@@ -114,27 +148,47 @@ func (c *Config) AppleAppSiteAssociation(host, teamID string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	appID := teamID + "." + c.App.ID
 	var comps []map[string]string
 	for _, l := range links {
 		if l.Host == host {
 			comps = append(comps, map[string]string{"/": l.Path})
 		}
 	}
-	return json.MarshalIndent(map[string]any{
-		"applinks": map[string]any{
-			"details": []any{map[string]any{
-				"appIDs":     []string{teamID + "." + c.App.ID},
-				"components": comps,
-			}},
-		},
-	}, "", "  ")
+	file := map[string]any{}
+	if len(comps) > 0 {
+		file["applinks"] = map[string]any{
+			"details": []any{map[string]any{"appIDs": []string{appID}, "components": comps}},
+		}
+	}
+	if contains(c.PasskeyHosts(), host) {
+		file["webcredentials"] = map[string]any{"apps": []string{appID}}
+	}
+	return json.MarshalIndent(file, "", "  ")
 }
 
-// AssetLinks returns the assetlinks.json letting the Android app with
-// the given SHA-256 certificate fingerprints open app.links.
-func (c *Config) AssetLinks(fingerprints []string) ([]byte, error) {
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// AssetLinks returns host's assetlinks.json, letting the Android app
+// with the given SHA-256 certificate fingerprints open app.links and use
+// passkeys for app.passkeys.
+func (c *Config) AssetLinks(host string, fingerprints []string) ([]byte, error) {
+	var rel []string
+	if contains(c.LinkHosts(), host) {
+		rel = append(rel, "delegate_permission/common.handle_all_urls")
+	}
+	if contains(c.PasskeyHosts(), host) {
+		rel = append(rel, "delegate_permission/common.get_login_creds")
+	}
 	return json.MarshalIndent([]any{map[string]any{
-		"relation": []string{"delegate_permission/common.handle_all_urls"},
+		"relation": rel,
 		"target": map[string]any{
 			"namespace":                "android_app",
 			"package_name":             c.App.ID,
