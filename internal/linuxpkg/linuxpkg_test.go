@@ -54,7 +54,7 @@ func TestDeb(t *testing.T) {
 		}
 	}
 	contents, _ := exec.Command("dpkg-deb", "--contents", out).CombinedOutput()
-	for _, w := range []string{"./usr/bin/hello-app", "./usr/share/applications/com.example.hello.desktop", "./usr/share/icons/hicolor/512x512/apps/com.example.hello.png", "./usr/share/metainfo/com.example.hello.metainfo.xml"} {
+	for _, w := range []string{"./usr/bin/hello-app", "./usr/share/applications/com.example.hello.desktop", "./usr/share/icons/hicolor/512x512/apps/com.example.hello.png", "./usr/share/metainfo/com.example.hello.metainfo.xml", "./usr/share/dbus-1/services/com.example.hello.service"} {
 		if !strings.Contains(string(contents), w) {
 			t.Errorf("contents lack %s:\n%s", w, contents)
 		}

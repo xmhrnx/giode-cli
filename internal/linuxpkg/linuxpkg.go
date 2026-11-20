@@ -81,7 +81,7 @@ var iconSizes = []int{16, 32, 48, 64, 128, 256, 512}
 
 // Files returns the files the app installs under prefix (/usr, or /app
 // for Flatpak): the binary (when Binary is set), desktop entry, icons
-// and AppStream metadata.
+// AppStream metadata and D-Bus service file.
 func Files(a App, prefix string) ([]File, error) {
 	var files []File
 	// Without a binary (a Flathub build compiles it), the rest.
@@ -96,6 +96,11 @@ func Files(a App, prefix string) ([]File, error) {
 		File{Path: prefix + "/share/applications/" + a.ID + ".desktop", Body: []byte(DesktopEntry(a)), Mode: 0o644},
 		File{Path: prefix + "/share/metainfo/" + a.ID + ".metainfo.xml", Body: []byte(Metainfo(a)), Mode: 0o644},
 	)
+	// D-Bus activation of the app's own name: a UnifiedPush distributor
+	// starts the app for a push (giode/push), as the desktop entry starts
+	// it from the menu.
+	files = append(files, File{Path: prefix + "/share/dbus-1/services/" + a.ID + ".service",
+		Body: []byte("[D-BUS Service]\nName=" + a.ID + "\nExec=" + prefix + "/bin/" + a.Command + "\n"), Mode: 0o644})
 	if a.MIMEXML != "" {
 		files = append(files, File{Path: prefix + "/share/mime/packages/" + a.ID + ".xml", Body: []byte(a.MIMEXML), Mode: 0o644})
 	}
