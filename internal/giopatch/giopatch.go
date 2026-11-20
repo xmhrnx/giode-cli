@@ -43,7 +43,7 @@ func (p patch) modulePath() string {
 
 // revision changes whenever the patches do, so cached copies made with
 // older patches aren't used.
-const revision = "19"
+const revision = "20"
 
 // androidPacing makes Android render at the display's refresh rate.
 // Gio asks the Choreographer for the next frame only after presenting
@@ -1827,10 +1827,331 @@ func (s *wlSeat) giodeSrcEnd(dropped bool) {
 // builds have the earlier tags too.
 const TagDragSource = "giode_gio5"
 
+// a11yAndroid lets giode's accessibility tree drive TalkBack: GioView
+// fills its virtual nodes from GiodeSetA11yProvider's JSON (class, text,
+// hint, state, checked, selected, heading, pane title, range, list
+// position, error, live region, actions), runs their actions through it
+// (click, scroll, set text, expand, collapse), finds the node under a
+// finger exploring the screen, and announces what it asks. Without a
+// provider, Gio's own semantic tree is used as before.
+var a11yAndroid = []patch{
+	{file: "app/giode_a11y.go", new: `// Added by giode's Gio patches: a screen reader's tree from giode.
+
+package app
+
+// GiodeA11yProvider gives a screen reader the UI as giode describes it,
+// in place of Gio's own semantic tree. Node IDs are positive; 0 is the
+// root. It's called on the platform's UI thread.
+type GiodeA11yProvider interface {
+	// A11yActive reports, every frame, whether a screen reader is on.
+	A11yActive(on bool)
+	// A11yNode describes node id as JSON for the platform's bridge.
+	A11yNode(id int) string
+	// A11yAt returns the node to explore at x, y (window pixels), 0 for
+	// none.
+	A11yAt(x, y float32) int
+	// A11yAction performs a platform action on node id.
+	A11yAction(id, action int, arg string) bool
+	// A11yChanged returns the nodes changed since the last frame (-1 the
+	// root) and text to announce.
+	A11yChanged() (ids []int, announce []string, assertive []bool)
+}
+
+var giodeA11y GiodeA11yProvider
+
+// GiodeSetA11yProvider sets the provider; call it before creating
+// windows.
+func GiodeSetA11yProvider(p GiodeA11yProvider) {
+	giodeA11y = p
+}
+`},
+	{
+		file: "app/os_android.go",
+		old:  "func (w *window) SetInputHint(mode key.InputHint) {\n",
+		new: `//export Java_org_gioui_GioView_giodeA11yOn
+func Java_org_gioui_GioView_giodeA11yOn(env *C.JNIEnv, class C.jclass) C.jboolean {
+	if giodeA11y != nil {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+//export Java_org_gioui_GioView_giodeA11yNode
+func Java_org_gioui_GioView_giodeA11yNode(env *C.JNIEnv, class C.jclass, id C.jint) C.jstring {
+	if giodeA11y == nil {
+		return 0
+	}
+	return javaString(env, giodeA11y.A11yNode(int(id)))
+}
+
+//export Java_org_gioui_GioView_giodeA11yAt
+func Java_org_gioui_GioView_giodeA11yAt(env *C.JNIEnv, class C.jclass, x, y C.jfloat) C.jint {
+	if giodeA11y == nil {
+		return 0
+	}
+	return C.jint(giodeA11y.A11yAt(float32(x), float32(y)))
+}
+
+//export Java_org_gioui_GioView_giodeA11yAction
+func Java_org_gioui_GioView_giodeA11yAction(env *C.JNIEnv, class C.jclass, id, action C.jint, arg C.jstring) C.jboolean {
+	if giodeA11y == nil {
+		return C.JNI_FALSE
+	}
+	s := ""
+	if arg != 0 {
+		s = goString(env, arg)
+	}
+	if giodeA11y.A11yAction(int(id), int(action), s) {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+// giodeAnnounce is GioView.giodeAnnounce, looked up on first use.
+var giodeAnnounce C.jmethodID
+
+// giodeA11yFrame tells giode's provider whether a screen reader is on,
+// and the screen reader what changed (giode).
+func (w *window) giodeA11yFrame(env *C.JNIEnv, active bool) {
+	giodeA11y.A11yActive(active)
+	if !active {
+		return
+	}
+	ids, texts, assertive := giodeA11y.A11yChanged()
+	for _, id := range ids {
+		callVoidMethod(env, w.view, gioView.sendA11yChange, jvalue(C.jint(id)))
+	}
+	if len(texts) == 0 {
+		return
+	}
+	if giodeAnnounce == nil {
+		giodeAnnounce = getMethodID(env, getObjectClass(env, w.view), "giodeAnnounce", "(Ljava/lang/String;Z)V")
+	}
+	for i, t := range texts {
+		callVoidMethod(env, w.view, giodeAnnounce, jvalue(javaString(env, t)), jvalue(javaBool(assertive[i])))
+	}
+}
+
+func (w *window) SetInputHint(mode key.InputHint) {
+`,
+	},
+	{
+		file: "app/os_android.go",
+		old: `	if a11yActive {
+		if newR, oldR := w.callbacks.SemanticRoot(), w.semantic.rootID; newR != oldR {
+`,
+		new: `	if giodeA11y != nil {
+		w.giodeA11yFrame(env, a11yActive)
+	} else if a11yActive {
+		if newR, oldR := w.callbacks.SemanticRoot(), w.semantic.rootID; newR != oldR {
+`,
+	},
+	{
+		file: "app/GioView.java",
+		old:  "\tstatic private native long onCreateView(GioView view);\n",
+		new: "\tstatic private native long onCreateView(GioView view);\n" +
+			"\tstatic private native boolean giodeA11yOn();\n" +
+			"\tstatic private native String giodeA11yNode(int id);\n" +
+			"\tstatic private native int giodeA11yAt(float x, float y);\n" +
+			"\tstatic private native boolean giodeA11yAction(int id, int action, String arg);\n",
+	},
+	{
+		file: "app/GioView.java",
+		old: "\t\t\t\tGioView.this.getLocationOnScreen(screenOff);\n" +
+			"\t\t\t\tinfo = GioView.this.initializeAccessibilityNodeInfo(nhandle, viewId, screenOff[0], screenOff[1], info);\n",
+		new: "\t\t\t\tGioView.this.getLocationOnScreen(screenOff);\n" +
+			"\t\t\t\tif (giodeA11yOn()) {\n" +
+			"\t\t\t\t\tGioView.this.giodeFill(info, viewId, screenOff);\n" +
+			"\t\t\t\t\treturn info;\n" +
+			"\t\t\t\t}\n" +
+			"\t\t\t\tinfo = GioView.this.initializeAccessibilityNodeInfo(nhandle, viewId, screenOff[0], screenOff[1], info);\n",
+	},
+	{
+		file: "app/GioView.java",
+		old: "\t\t\t\tif (viewId == View.NO_ID) {\n" +
+			"\t\t\t\t\treturn GioView.this.performAccessibilityAction(action, arguments);\n" +
+			"\t\t\t\t}\n",
+		new: "\t\t\t\tif (viewId == View.NO_ID) {\n" +
+			"\t\t\t\t\treturn GioView.this.performAccessibilityAction(action, arguments);\n" +
+			"\t\t\t\t}\n" +
+			"\t\t\t\tif (giodeA11yOn()) {\n" +
+			"\t\t\t\t\treturn GioView.this.giodePerform(viewId, action, arguments);\n" +
+			"\t\t\t\t}\n",
+	},
+	{
+		file: "app/GioView.java",
+		old: "\t\tif (!accessManager.isTouchExplorationEnabled()) {\n" +
+			"\t\t\treturn super.dispatchHoverEvent(event);\n" +
+			"\t\t}\n",
+		new: "\t\tif (!accessManager.isTouchExplorationEnabled()) {\n" +
+			"\t\t\treturn super.dispatchHoverEvent(event);\n" +
+			"\t\t}\n" +
+			"\t\tif (giodeA11yOn()) {\n" +
+			"\t\t\tgiodeHover(event);\n" +
+			"\t\t\treturn true;\n" +
+			"\t\t}\n",
+	},
+	{
+		file: "app/GioView.java",
+		old:  "\tvoid sendA11yEvent(int eventType, int viewId) {\n",
+		new: `	// giode: accessibility nodes from giode's tree (GiodeSetA11yProvider).
+	private int giodeFocusId = View.NO_ID;
+	private int giodeHoverId = View.NO_ID;
+
+	private void giodeFill(AccessibilityNodeInfo info, int viewId, int[] screenOff) {
+		String json = giodeA11yNode(viewId == View.NO_ID ? 0 : viewId);
+		if (json == null || json.isEmpty()) {
+			return;
+		}
+		try {
+			org.json.JSONObject o = new org.json.JSONObject(json);
+			org.json.JSONArray ch = o.optJSONArray("children");
+			if (ch != null) {
+				for (int i = 0; i < ch.length(); i++) {
+					info.addChild(this, ch.getInt(i));
+				}
+			}
+			if (viewId == View.NO_ID) {
+				return;
+			}
+			int parent = o.optInt("parent", 0);
+			if (parent > 0) {
+				info.setParent(this, parent);
+			} else {
+				info.setParent(this);
+			}
+			info.setBoundsInScreen(new Rect(o.optInt("l") + screenOff[0], o.optInt("t") + screenOff[1], o.optInt("r") + screenOff[0], o.optInt("b") + screenOff[1]));
+			info.setClassName(o.optString("cls", "android.view.View"));
+			String text = o.optString("text", "");
+			if (!text.isEmpty()) {
+				info.setText(text);
+			}
+			String hint = o.optString("hint", "");
+			if (!hint.isEmpty() && Build.VERSION.SDK_INT >= 26) {
+				info.setHintText(hint);
+			}
+			String state = o.optString("state", "");
+			if (!state.isEmpty() && Build.VERSION.SDK_INT >= 30) {
+				info.setStateDescription(state);
+			}
+			String err = o.optString("error", "");
+			if (!err.isEmpty()) {
+				info.setContentInvalid(true);
+				info.setError(err);
+			}
+			String pane = o.optString("pane", "");
+			if (!pane.isEmpty() && Build.VERSION.SDK_INT >= 28) {
+				info.setPaneTitle(pane);
+			}
+			info.setCheckable(o.optBoolean("checkable"));
+			info.setChecked(o.optBoolean("checked"));
+			info.setSelected(o.optBoolean("selected"));
+			info.setEnabled(!o.optBoolean("disabled"));
+			info.setFocusable(o.optBoolean("focusable"));
+			info.setFocused(o.optBoolean("focused"));
+			info.setClickable(o.optBoolean("clickable"));
+			info.setScrollable(o.optBoolean("scrollable"));
+			info.setEditable(o.optBoolean("editable"));
+			info.setPassword(o.optBoolean("password"));
+			if (Build.VERSION.SDK_INT >= 24) {
+				info.setImportantForAccessibility(o.optBoolean("important"));
+			}
+			if (Build.VERSION.SDK_INT >= 28) {
+				info.setHeading(o.optBoolean("heading"));
+			}
+			info.setLiveRegion(o.optInt("live", 0));
+			if (o.optBoolean("range")) {
+				info.setRangeInfo(AccessibilityNodeInfo.RangeInfo.obtain(AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_FLOAT,
+					(float) o.optDouble("min", 0), (float) o.optDouble("max", 1), (float) o.optDouble("now", 0)));
+			}
+			if (o.optBoolean("item")) {
+				info.setCollectionItemInfo(AccessibilityNodeInfo.CollectionItemInfo.obtain(o.optInt("row"), 1, 0, 1, o.optBoolean("heading"), o.optBoolean("selected")));
+			}
+			org.json.JSONArray acts = o.optJSONArray("actions");
+			if (acts != null) {
+				for (int i = 0; i < acts.length(); i++) {
+					info.addAction(acts.getInt(i));
+				}
+			}
+			boolean focused = viewId == giodeFocusId;
+			info.setAccessibilityFocused(focused);
+			info.addAction(focused ? AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS : AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS);
+			info.setVisibleToUser(true);
+		} catch (org.json.JSONException e) {
+		}
+	}
+
+	private boolean giodePerform(int viewId, int action, Bundle arguments) {
+		switch (action) {
+		case AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS:
+			if (giodeFocusId != viewId) {
+				giodeFocusId = viewId;
+				invalidate();
+				sendA11yEvent(AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED, viewId);
+			}
+			return true;
+		case AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS:
+			if (giodeFocusId == viewId) {
+				giodeFocusId = View.NO_ID;
+				invalidate();
+				sendA11yEvent(AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED, viewId);
+			}
+			return true;
+		}
+		String arg = null;
+		if (arguments != null) {
+			CharSequence cs = arguments.getCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE);
+			if (cs != null) {
+				arg = cs.toString();
+			}
+		}
+		boolean ok = giodeA11yAction(viewId, action, arg);
+		if (ok && action == AccessibilityNodeInfo.ACTION_CLICK) {
+			sendA11yEvent(AccessibilityEvent.TYPE_VIEW_CLICKED, viewId);
+		}
+		return ok;
+	}
+
+	private void giodeHover(MotionEvent event) {
+		int id = View.NO_ID;
+		if (event.getAction() != MotionEvent.ACTION_HOVER_EXIT) {
+			id = giodeA11yAt(event.getX(), event.getY());
+			if (id <= 0) {
+				id = View.NO_ID;
+			}
+		}
+		if (id == giodeHoverId) {
+			return;
+		}
+		if (id != View.NO_ID) {
+			sendA11yEvent(AccessibilityEvent.TYPE_VIEW_HOVER_ENTER, id);
+		}
+		if (giodeHoverId != View.NO_ID) {
+			sendA11yEvent(AccessibilityEvent.TYPE_VIEW_HOVER_EXIT, giodeHoverId);
+		}
+		giodeHoverId = id;
+	}
+
+	void giodeAnnounce(String text, boolean assertive) {
+		if (accessManager.isEnabled()) {
+			announceForAccessibility(text);
+		}
+	}
+
+	void sendA11yEvent(int eventType, int viewId) {
+`,
+	},
+}
+
+// TagA11y is the build tag of builds against patches with
+// GiodeSetA11yProvider (revision 20 on), for giode versions that use it;
+// builds have the earlier tags too.
+const TagA11y = "giode_gio6"
+
 // All is every patch, for builds of any target: the Android ones only
 // touch Android's files. Builds against it have the giode_gio tag (see
 // Tag).
-var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...), iosTextInput...), inputPlain...), dragSource...)
+var All = append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append(append([]patch{}, Android...), underlay...), windowsMinimized...), windowsFullscreen...), macosFullscreen...), fileDrag...), inject...), windowsBackground...), iosSimulatorShaders...), iosResize...), androidReattach...), iosKeyboard...), returnKey...), iosKeyboardInset...), iosTextInput...), inputPlain...), dragSource...), a11yAndroid...)
 
 // windowsBackground fills a new Windows window with the app's background
 // color until its first frame: Gio skips the window's background erase,
