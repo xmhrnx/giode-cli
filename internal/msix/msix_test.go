@@ -250,3 +250,23 @@ func TestContextActions(t *testing.T) {
 		t.Error("an x86 package got the handler")
 	}
 }
+
+func TestToastActivator(t *testing.T) {
+	// The class giode/notification registers for com.example.app.
+	if got := ToastCLSID("com.example.app"); got != "0EE34A74-4A3B-5A70-AC55-57B33A34DB48" {
+		t.Errorf("ToastCLSID = %s", got)
+	}
+	m, err := Manifest(App{Name: "My App", IdentityName: "com.example.app", Publisher: "CN=Example", Version: "1.0.0",
+		ToastActivator: ToastCLSID("com.example.app")}, "x64", "My App.exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{
+		`<desktop:ToastNotificationActivation ToastActivatorCLSID="0EE34A74-4A3B-5A70-AC55-57B33A34DB48"/>`,
+		`<com:ExeServer Executable="My App.exe" Arguments="-ToastActivated" DisplayName="My App"><com:Class Id="0EE34A74-4A3B-5A70-AC55-57B33A34DB48"`,
+	} {
+		if !strings.Contains(m, w) {
+			t.Errorf("manifest lacks %s:\n%s", w, m)
+		}
+	}
+}

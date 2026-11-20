@@ -198,7 +198,7 @@ func buildMSIX(c *config.Config, o buildOpts) (string, error) {
 		Description: c.App.Description, Version: c.App.Version, Exe: exe, Icon: c.Path(c.App.Icon),
 		Arch: arch, Protocols: protocols, Files: dlls, FileTypes: msixTypes, StartupTask: m.StartupTask,
 		Firewall: inst.Firewall, FirewallPublic: inst.FirewallPublic, FirewallPorts: msixPorts,
-		ContextActions: actions,
+		ContextActions: actions, ToastActivator: msix.ToastCLSID(c.App.ID),
 	}, out)
 	done(err)
 	if err != nil {

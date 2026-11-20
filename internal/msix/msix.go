@@ -67,6 +67,9 @@ type App struct {
 	// app's own registry entries don't reach Explorer, so the package
 	// declares them, with a handler DLL starting the app.
 	ContextActions []ContextAction
+	// ToastActivator is the CLSID (no braces) of the app's toast
+	// activator, ToastCLSID of its ID; empty for none.
+	ToastActivator string
 }
 
 // FirewallPort is an inbound rule: a protocol, "TCP" or "UDP", and a
@@ -254,7 +257,7 @@ func Manifest(a App, arch, exe string) (string, error) {
 	}
 	e := html.EscapeString
 	var ext strings.Builder
-	if len(a.Protocols) > 0 || len(a.FileTypes) > 0 || a.StartupTask || len(a.ContextActions) > 0 {
+	if len(a.Protocols) > 0 || len(a.FileTypes) > 0 || a.StartupTask || len(a.ContextActions) > 0 || a.ToastActivator != "" {
 		ext.WriteString("\n      <Extensions>")
 		for _, p := range a.Protocols {
 			fmt.Fprintf(&ext, "\n        <uap:Extension Category=\"windows.protocol\"><uap:Protocol Name=\"%s\"/></uap:Extension>", e(strings.ToLower(p)))
@@ -270,6 +273,7 @@ func Manifest(a App, arch, exe string) (string, error) {
 			fmt.Fprintf(&ext, "\n        <desktop:Extension Category=\"windows.startupTask\" Executable=\"%s\" EntryPoint=\"Windows.FullTrustApplication\"><desktop:StartupTask TaskId=\"%s\" Enabled=\"false\" DisplayName=\"%s\"/></desktop:Extension>", e(exe), StartupTaskID, e(a.Name))
 		}
 		ext.WriteString(contextMenuExtensions(a))
+		ext.WriteString(toastExtensions(a, exe))
 		ext.WriteString("\n      </Extensions>")
 	}
 	pkgExt := firewallExtension(a, exe)
