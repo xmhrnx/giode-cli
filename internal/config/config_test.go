@@ -92,6 +92,30 @@ UIFileSharingEnabled = true
 	}
 }
 
+func TestIOSPlistCalls(t *testing.T) {
+	c, err := load(t, `
+[app]
+name = "Talk"
+id = "com.example.talk"
+calls = true
+[ios]
+push = "production"
+[ios.plist]
+UIBackgroundModes = ["audio", "fetch"]
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.IOSPlist()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "<key>UIBackgroundModes</key>\n\t<array><string>remote-notification</string><string>voip</string><string>audio</string><string>fetch</string></array>"
+	if !strings.Contains(got, want) {
+		t.Errorf("plist lacks %q:\n%s", want, got)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	for name, src := range map[string]string{
 		"missing name":       "[app]\nid = \"com.example.a\"\n",

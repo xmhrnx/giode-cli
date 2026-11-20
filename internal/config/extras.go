@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"html"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -133,7 +134,14 @@ var usageKeys = map[string]string{
 // XML key/value pairs.
 func (c *Config) IOSPlist() (string, error) {
 	raw := c.IOS.Plist
-	if c.IOS.Push != "" || c.App.ShareTarget {
+	var modes []string
+	if c.IOS.Push != "" {
+		modes = append(modes, "remote-notification")
+	}
+	if c.App.Calls {
+		modes = append(modes, "voip", "audio")
+	}
+	if len(modes) > 0 || c.App.ShareTarget {
 		raw = make(map[string]any, len(c.IOS.Plist)+3)
 		for k, v := range c.IOS.Plist {
 			raw[k] = v
@@ -144,11 +152,11 @@ func (c *Config) IOSPlist() (string, error) {
 		raw["GiodeAppGroup"] = c.IOSAppGroup()
 		raw["GiodeShareScheme"] = c.IOSShareScheme()
 	}
-	if c.IOS.Push != "" {
-		modes := []string{"remote-notification"}
+	if len(modes) > 0 {
+		// Add to the background modes ios.plist sets, once each.
 		if old, ok := raw["UIBackgroundModes"].([]any); ok {
 			for _, m := range old {
-				if s, ok := m.(string); ok && s != "remote-notification" {
+				if s, ok := m.(string); ok && !slices.Contains(modes, s) {
 					modes = append(modes, s)
 				}
 			}

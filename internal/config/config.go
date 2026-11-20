@@ -93,6 +93,12 @@ type App struct {
 	// iOS it builds, signs and embeds a share extension that hands the
 	// items to the app through an App Group (ios.app_group).
 	ShareTarget bool `toml:"share_target"`
+	// Calls is for apps that make voice or video calls (giode/telecom,
+	// giode/rtc): on iOS it adds the voip and audio background modes,
+	// so CallKit calls and VoIP pushes reach the app and its audio keeps
+	// running in the background. VoIP pushes also need ios.push. On
+	// Android the telecom package's manifest declares what it needs.
+	Calls bool `toml:"calls"`
 	// Publisher is who makes the app, shown by installers and in
 	// Windows' list of installed apps; Description a one-line summary;
 	// Website the app's home page.

@@ -122,6 +122,7 @@ schemes = ["agent"]           # URL schemes the app opens
 links = ["https://example.com/app/*"]   # universal links / App Links; see giode links
 passkeys = ["example.com"]               # domains the app uses passkeys for; see giode links
 share_target = true           # in the share sheet for files and text (Config.OnShareReceived)
+calls = true                  # voice and video calls: iOS voip and audio background modes (giode/telecom)
 tags = ""                     # Go build tags
 renderer = "opengl"           # Gio's OpenGL renderer on macOS and iOS (Config.Renderer)
 gio_patches = true            # build against Gio with giode's patches (default true)
